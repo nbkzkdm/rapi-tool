@@ -32,6 +32,7 @@ def build_input_context(
     query: dict[str, list[str]],
     headers: dict[str, str],
     body_text: str | None,
+    path_params: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a nested dict that placeholders can resolve against."""
     qflat = {k: (v[0] if v else "") for k, v in query.items()}
@@ -45,6 +46,7 @@ def build_input_context(
     return {
         "method": method,
         "path": path,
+        "path_params": path_params or {},
         "query": qflat,
         "header": {k.lower(): v for k, v in headers.items()},
         "body": body_obj if body_obj is not None else (body_text or ""),
@@ -67,6 +69,13 @@ def apply_placeholders(template: str, ctx: dict[str, Any]) -> str:
             if val == "" and isinstance(ctx.get("body"), (dict, list)):
                 val = json.dumps(ctx["body"], ensure_ascii=False)
             return "" if val is None else str(val)
+
+        # path alone = full path string; path.id = path parameter
+        if key == "path":
+            return str(ctx.get("path", ""))
+        if key.startswith("path."):
+            pname = key.split(".", 1)[1]
+            return str((ctx.get("path_params") or {}).get(pname, ""))
 
         # header.X-Request-Id etc. (case-insensitive)
         if key.lower().startswith("header."):

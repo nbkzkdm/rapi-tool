@@ -76,6 +76,7 @@ def _resolve_actual(
     headers: dict[str, str],
     body_text: str | None,
     body_json: Any,
+    path_params: dict[str, str] | None = None,
 ) -> str | None:
     """Resolve a condition key to the actual string value from the request."""
     key = key.strip()
@@ -85,6 +86,11 @@ def _resolve_actual(
         return method
     if low == "path":
         return path
+    if low.startswith("path."):
+        pname = key.split(".", 1)[1]
+        if not path_params or pname not in path_params:
+            return None
+        return path_params[pname]
 
     if low.startswith("query."):
         qname = key.split(".", 1)[1]
@@ -125,6 +131,7 @@ def match_conditions(
     query: dict[str, list[str]],
     headers: dict[str, str],
     body_text: str | None,
+    path_params: dict[str, str] | None = None,
 ) -> bool:
     """AND-match all conditions against the request. Empty conditions → True."""
     if not conditions:
@@ -138,7 +145,9 @@ def match_conditions(
             body_json = None
 
     for key, expected in conditions.items():
-        actual = _resolve_actual(key, method, path, query, headers, body_text, body_json)
+        actual = _resolve_actual(
+            key, method, path, query, headers, body_text, body_json, path_params=path_params
+        )
         if actual is None:
             return False
         # rules: ~regex uses search (so ~^9 matches 999); other patterns use match_value

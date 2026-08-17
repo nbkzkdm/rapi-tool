@@ -114,12 +114,31 @@ rapi stop
 
 起動時の PID とポートは `~/.rapi/rapi.log` に記録されます。
 
+
+## パスパラメータ
+
+`{name}` 形式のパスを定義できます。
+
+```bash
+rapi host '/users/{id}' get -r '{"id":"{INPUT.path.id}"}'
+rapi start --port 8000
+curl http://127.0.0.1:8000/users/42
+# → {"id":"42"}
+```
+
+| 記法 | 意味 |
+|------|------|
+| `{INPUT.path}` | 実際のパス全体（`/users/42`） |
+| `{INPUT.path.id}` | パスパラメータ `id` |
+| `--when 'path.id=000'` | 条件にも利用可 |
+
 ## プレースホルダー
 
 | 記法 | 意味 |
 |------|------|
 | `{INPUT.method}` | HTTP メソッド |
-| `{INPUT.path}` | パス |
+| `{INPUT.path}` | パス全体 |
+| `{INPUT.path.id}` | パスパラメータ |
 | `{INPUT.query.aaa}` | クエリ |
 | `{INPUT.body}` | ボディ全体 |
 | `{INPUT.body.id}` | JSON の id |

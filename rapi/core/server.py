@@ -14,6 +14,7 @@ from .matching import match_body_pattern, match_conditions, match_value
 from .models import Endpoint, ResponseSpec
 from .placeholders import apply_placeholders, build_input_context
 from .listgen import expand_list_in_body
+from .pathmatch import match_path
 from .store import DefinitionStore, default_store_path
 
 
@@ -116,13 +117,23 @@ class MockHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         pass
 
-    def _find(self) -> Endpoint | None:
+    def _find(self) -> tuple[Endpoint | None, dict[str, str]]:
+        """Return (endpoint, path_params). path_params empty for exact paths."""
         req_path = urlparse(self.path).path
         method = self.command.upper()
+        # prefer exact match, then templates
         for ep in self.endpoints:
-            if ep.path == req_path and ep.method == method:
-                return ep
-        return None
+            if ep.method != method:
+                continue
+            if ep.path == req_path:
+                return ep, {}
+        for ep in self.endpoints:
+            if ep.method != method:
+                continue
+            captured = match_path(ep.path, req_path)
+            if captured is not None:
+                return ep, captured
+        return None, {}
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -176,7 +187,7 @@ class MockHandler(BaseHTTPRequestHandler):
             print(f"  body: <binary {len(raw)} bytes>")
             body_text = None
 
-        ep = self._find()
+        ep, path_params = self._find()
         if ep is None:
             self._log_error(
                 404,
@@ -252,6 +263,7 @@ class MockHandler(BaseHTTPRequestHandler):
                 query=query,
                 headers=headers,
                 body_text=body_text,
+                path_params=path_params,
             ):
                 chosen = rule.response
                 matched_rule = rule
@@ -275,6 +287,7 @@ class MockHandler(BaseHTTPRequestHandler):
             query=query,
             headers=headers,
             body_text=body_text,
+            path_params=path_params,
         )
         # list expansion applies to default response only (rules keep explicit bodies)
         body_src = chosen.body
