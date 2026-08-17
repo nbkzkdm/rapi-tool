@@ -23,20 +23,29 @@ def state_dir() -> Path:
     return d
 
 
-def pid_file() -> Path:
-    return state_dir() / "rapi.pid"
+def group_state_dir(group: str = "default") -> Path:
+    g = (group or "default").strip() or "default"
+    # safe directory name
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in g)
+    d = state_dir() / "groups" / safe
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
-def port_file() -> Path:
-    return state_dir() / "rapi.port"
+def pid_file(group: str = "default") -> Path:
+    return group_state_dir(group) / "rapi.pid"
 
 
-def log_file() -> Path:
-    return state_dir() / "rapi.log"
+def port_file(group: str = "default") -> Path:
+    return group_state_dir(group) / "rapi.port"
 
 
-def get_pid() -> int | None:
-    pf = pid_file()
+def log_file(group: str = "default") -> Path:
+    return group_state_dir(group) / "rapi.log"
+
+
+def get_pid(group: str = "default") -> int | None:
+    pf = pid_file(group)
     if not pf.is_file():
         return None
     try:
@@ -51,12 +60,12 @@ def get_pid() -> int | None:
         return None
 
 
-def is_running() -> bool:
-    return get_pid() is not None
+def is_running(group: str = "default") -> bool:
+    return get_pid(group) is not None
 
 
-def get_port() -> int | None:
-    pf = port_file()
+def get_port(group: str = "default") -> int | None:
+    pf = port_file(group)
     if not pf.is_file():
         return None
     try:
@@ -65,8 +74,8 @@ def get_port() -> int | None:
         return None
 
 
-def stop_server(timeout: float = 2.0) -> bool:
-    pid = get_pid()
+def stop_server(group: str = "default", timeout: float = 2.0) -> bool:
+    pid = get_pid(group)
     if not pid:
         return False
     try:
@@ -85,8 +94,8 @@ def stop_server(timeout: float = 2.0) -> bool:
                 pass
     except OSError:  # pragma: no cover
         pass
-    pid_file().unlink(missing_ok=True)
-    port_file().unlink(missing_ok=True)
+    pid_file(group).unlink(missing_ok=True)
+    port_file(group).unlink(missing_ok=True)
     return True
 
 
@@ -312,29 +321,30 @@ class MockHandler(BaseHTTPRequestHandler):
         self.handle_request()
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000, background: bool = True) -> None:
+def run_server(host: str = "127.0.0.1", port: int = 8000, background: bool = True, group: str = "default") -> None:
+    group = (group or "default").strip() or "default"
     store = DefinitionStore()
-    endpoints = store.list()
+    endpoints = [ep for ep in store.list() if ep.group == group]
     if not endpoints:
-        print("No endpoints defined. Use 'rapi host ...' first.", file=sys.stderr)
+        print(f"No endpoints defined for group '{group}'. Use 'rapi host ... --group {group}' first.", file=sys.stderr)
         sys.exit(1)
 
     if background:
-        if is_running():
-            print("Already running. Use 'rapi stop' or 'rapi restart'.", file=sys.stderr)
+        if is_running(group):
+            print(f"Group '{group}' already running. Use 'rapi stop --group {group}' or 'rapi restart'.", file=sys.stderr)
             sys.exit(1)
 
         pid = os.fork()
         if pid > 0:
             # parent: record pid/port and notify user
-            pid_file().write_text(str(pid))
-            port_file().write_text(str(port))
+            pid_file(group).write_text(str(pid))
+            port_file(group).write_text(str(port))
             # also append startup line to log from parent (reliable even if child is slow)
             ts = time.strftime("%Y-%m-%d %H:%M:%S")
-            with open(log_file(), "a", encoding="utf-8") as lf:
-                lf.write(f"[{ts}] started pid={pid} host={host} port={port}\n")
+            with open(log_file(group), "a", encoding="utf-8") as lf:
+                lf.write(f"[{ts}] group={group} started pid={pid} host={host} port={port}\n")
                 lf.flush()
-            print(f"Started (pid {pid})")
+            print(f"Started group '{group}' (pid {pid})")
             print(f"  listen : http://{host}:{port}")
             for ep in endpoints:
                 print(f"  - {ep.method} {ep.path}  ({len(ep.rules)} rules)")
@@ -346,13 +356,13 @@ def run_server(host: str = "127.0.0.1", port: int = 8000, background: bool = Tru
         except Exception:  # pragma: no cover
             pass
         sys.stdin.close()
-        log = open(log_file(), "a", encoding="utf-8")
+        log = open(log_file(group), "a", encoding="utf-8")
         sys.stdout = log  # type: ignore
         sys.stderr = log  # type: ignore
         # child also logs with its own pid confirmation
         print(
             f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
-            f"worker pid={os.getpid()} listening on {host}:{port} "
+            f"group={group} worker pid={os.getpid()} listening on {host}:{port} "
             f"endpoints={len(endpoints)}"
         )
         sys.stdout.flush()
@@ -369,5 +379,5 @@ def run_server(host: str = "127.0.0.1", port: int = 8000, background: bool = Tru
     finally:
         server.server_close()
         if background:  # pragma: no cover - child process exit path
-            pid_file().unlink(missing_ok=True)
-            port_file().unlink(missing_ok=True)
+            pid_file(group).unlink(missing_ok=True)
+            port_file(group).unlink(missing_ok=True)

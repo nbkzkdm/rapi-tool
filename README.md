@@ -62,14 +62,32 @@ rapi stop
 
 | コマンド | 説明 |
 |---------|------|
-| `rapi host` | REST 定義を登録（ポートは指定しない） |
-| `rapi start` | サーバー起動（`--port` でポート指定、デフォルト 8000） |
+| `rapi host` | REST 定義を登録（ポートは指定しない。`--group` でグループ分け、省略時 `default`） |
+| `rapi start` | サーバー起動（`--port` / `--group`。グループごとに別プロセス） |
 | `rapi stop` | 停止 |
 | `rapi restart` | 再起動 |
 | `rapi status` | 起動状態と定義一覧 |
 | `rapi delete` | 定義削除（起動中なら停止） |
 | `rapi save` | 定義を JSON に書き出し |
 | `rapi load` | JSON から定義を読み込み |
+
+
+## グループ（`--group`）
+
+定義・プロセスを名前で分けます。省略時はすべて `default` です。
+
+```bash
+rapi host /a get -r '{"ok":true}' --group api-a
+rapi host /b get -r '{"ok":true}' --group api-b
+
+rapi start --group api-a --port 8001
+rapi start --group api-b --port 8002
+
+rapi status
+rapi stop --group api-a
+```
+
+状態ファイルは `~/.rapi/groups/<group>/` 配下（pid / port / log）に分かれます。
 
 ## 基本の流れ
 

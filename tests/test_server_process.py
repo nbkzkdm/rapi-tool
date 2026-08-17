@@ -20,18 +20,22 @@ def test_get_pid_port_stop(tmp_path: Path, monkeypatch):
     assert not srv.is_running()
     assert not srv.stop_server()
 
+    g = state / "groups" / "default"
+    g.mkdir(parents=True, exist_ok=True)
     # invalid pid file
-    (state / "rapi.pid").write_text("not-a-pid", encoding="utf-8")
+    (g / "rapi.pid").write_text("not-a-pid", encoding="utf-8")
     assert srv.get_pid() is None
 
-    (state / "rapi.port").write_text("abc", encoding="utf-8")
+    (g / "rapi.port").write_text("abc", encoding="utf-8")
     assert srv.get_port() is None
 
-    (state / "rapi.port").write_text("8080", encoding="utf-8")
+    g = state / "groups" / "default"
+    g.mkdir(parents=True, exist_ok=True)
+    (g / "rapi.port").write_text("8080", encoding="utf-8")
     assert srv.get_port() == 8080
 
     # dead pid
-    (state / "rapi.pid").write_text("99999999", encoding="utf-8")
+    (g / "rapi.pid").write_text("99999999", encoding="utf-8")
     assert srv.get_pid() is None  # cleaned up
 
 
@@ -44,7 +48,7 @@ def test_run_server_no_endpoints(tmp_store: DefinitionStore, monkeypatch):
 def test_run_server_already_running(tmp_store: DefinitionStore, monkeypatch):
     tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET"))
     monkeypatch.setattr(srv, "DefinitionStore", lambda: tmp_store)
-    monkeypatch.setattr(srv, "is_running", lambda: True)
+    monkeypatch.setattr(srv, "is_running", lambda *a, **k: True)
     with pytest.raises(SystemExit):
         srv.run_server(background=True)
 
@@ -76,13 +80,14 @@ def test_run_server_background_parent(tmp_store: DefinitionStore, monkeypatch, t
     monkeypatch.setattr(srv, "DefinitionStore", lambda: tmp_store)
     tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET"))
 
-    monkeypatch.setattr(srv, "is_running", lambda: False)
-    monkeypatch.setattr(os, "fork", lambda: 12345)  # parent path
+    monkeypatch.setattr(srv, "is_running", lambda *a, **k: False)
+    monkeypatch.setattr(os, "fork", lambda *a, **k: 12345)  # parent path
 
     srv.run_server(host="127.0.0.1", port=7777, background=True)
     out = capsys.readouterr().out
     assert "Started" in out
-    assert (state / "rapi.pid").read_text() == "12345"
-    assert (state / "rapi.port").read_text() == "7777"
-    log = (state / "rapi.log").read_text()
+    g = state / "groups" / "default"
+    assert (g / "rapi.pid").read_text() == "12345"
+    assert (g / "rapi.port").read_text() == "7777"
+    log = (g / "rapi.log").read_text()
     assert "port=7777" in log

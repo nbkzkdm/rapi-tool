@@ -60,6 +60,7 @@ class Endpoint:
     name: str  # unique id, often path+method
     path: str
     method: str
+    group: str = "default"
     default: ResponseSpec = field(default_factory=ResponseSpec)
     rules: list[Rule] = field(default_factory=list)
     # legacy / extra validation
@@ -76,6 +77,7 @@ class Endpoint:
         if not self.path.startswith("/"):
             self.path = "/" + self.path
         self.method = self.method.upper()
+        self.group = (self.group or "default").strip() or "default"
         if not self.name:
             self.name = f"{self.method}:{self.path}"
 
@@ -84,6 +86,7 @@ class Endpoint:
             "name": self.name,
             "path": self.path,
             "method": self.method,
+            "group": self.group or "default",
             "default": self.default.to_dict(),
             "rules": [r.to_dict() for r in self.rules],
         }
@@ -135,6 +138,7 @@ class Endpoint:
             name=str(data.get("name") or f"{data.get('method', 'GET')}:{data.get('path', '/')}"),
             path=str(data.get("path", "/")),
             method=str(data.get("method", "GET")),
+            group=str(data.get("group") or "default"),
             default=ResponseSpec.from_dict(default_data) if isinstance(default_data, dict) else ResponseSpec(),
             rules=[Rule.from_dict(r) for r in rules_data if isinstance(r, dict)],
             params={str(k): (None if v is None else str(v)) for k, v in params.items()},

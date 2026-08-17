@@ -26,6 +26,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Replace all existing definitions (default: merge)",
     )
+    p.add_argument(
+        "--group",
+        default=None,
+        help="After load, assign all imported endpoints to this group (optional)",
+    )
     p.set_defaults(func=run)
 
 
@@ -57,20 +62,30 @@ def run(args: argparse.Namespace) -> None:
     text = path.read_text(encoding="utf-8")
     fmt = _detect_format(path, text, getattr(args, "fmt", "auto"))
 
-    pid = get_pid()
-    if pid:
-        stop_server()
-        print(f"Stopped server (pid {pid})")
-
+    # stop any running groups that may be affected (simple: stop all known groups + default)
     store = DefinitionStore()
+    groups = {ep.group for ep in store.list()} | {"default"}
+    for g in sorted(groups):
+        pid = get_pid(g)
+        if pid:
+            stop_server(g)
+            print(f"Stopped server group '{g}' (pid {pid})")
+
     if fmt == "openapi":
         items = load_openapi(str(path))
-        count = store.import_from(items, merge=not args.replace)
         label = "OpenAPI"
     else:
         data = json.loads(text)
-        count = store.import_from(data, merge=not args.replace)
+        items = data if isinstance(data, list) else data.get("endpoints", data)
         label = "JSON"
+
+    g_override = getattr(args, "group", None)
+    if g_override and isinstance(items, list):
+        for it in items:
+            if isinstance(it, dict):
+                it["group"] = g_override
+
+    count = store.import_from(items, merge=not args.replace)
 
     mode = "replaced" if args.replace else "merged"
     print(f"Loaded {count} endpoint(s) from {path} ({label}, {mode})")

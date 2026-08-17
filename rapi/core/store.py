@@ -55,29 +55,39 @@ class DefinitionStore:
     def get(self, name: str) -> Endpoint | None:
         return self._endpoints.get(name)
 
-    def get_by_path_method(self, path: str, method: str) -> Endpoint | None:
+    def get_by_path_method(self, path: str, method: str, group: str = "default") -> Endpoint | None:
         path = path if path.startswith("/") else "/" + path
         method = method.upper()
+        group = (group or "default").strip() or "default"
         for ep in self._endpoints.values():
-            if ep.path == path and ep.method == method:
+            if ep.path == path and ep.method == method and ep.group == group:
                 return ep
         return None
 
+    def list_group(self, group: str = "default") -> list[Endpoint]:
+        group = (group or "default").strip() or "default"
+        return [ep for ep in self._endpoints.values() if ep.group == group]
+
     def upsert(self, ep: Endpoint) -> None:
-        # if same path+method exists under different name, replace that one
-        existing = self.get_by_path_method(ep.path, ep.method)
+        # if same path+method+group exists under different name, replace that one
+        existing = self.get_by_path_method(ep.path, ep.method, ep.group)
         if existing and existing.name != ep.name:
             del self._endpoints[existing.name]
         self._endpoints[ep.name] = ep
         self.save()
 
-    def delete(self, name: str) -> bool:
+    def delete(self, name: str, group: str | None = None) -> bool:
         if name in self._endpoints:
+            ep = self._endpoints[name]
+            if group is not None and ep.group != group:
+                return False
             del self._endpoints[name]
             self.save()
             return True
-        # try path or method:path
+        # try path or method:path within group
         for key, ep in list(self._endpoints.items()):
+            if group is not None and ep.group != group:
+                continue
             if ep.path == name or ep.path.lstrip("/") == name.lstrip("/") or key == name:
                 del self._endpoints[key]
                 self.save()

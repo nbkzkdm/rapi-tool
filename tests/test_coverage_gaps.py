@@ -113,8 +113,10 @@ def test_stop_server_kill_paths(tmp_path, monkeypatch):
         while True:
             signal.pause()
     try:
-        (state / "rapi.pid").write_text(str(pid), encoding="utf-8")
-        (state / "rapi.port").write_text("1", encoding="utf-8")
+        g = state / "groups" / "default"
+        g.mkdir(parents=True, exist_ok=True)
+        (g / "rapi.pid").write_text(str(pid), encoding="utf-8")
+        (g / "rapi.port").write_text("1", encoding="utf-8")
         # short timeout to hit kill path
         assert srv.stop_server(timeout=0.2)
     finally:
@@ -139,16 +141,16 @@ def test_host_body_file_missing(tmp_store):
 def test_load_stops_server(tmp_store, tmp_path, monkeypatch):
     f = tmp_path / "d.json"
     f.write_text('{"endpoints":[{"path":"/z","method":"GET"}]}', encoding="utf-8")
-    monkeypatch.setattr("rapi.commands.load.get_pid", lambda: 99)
+    monkeypatch.setattr("rapi.commands.load.get_pid", lambda *a, **k: 99)
     called = []
-    monkeypatch.setattr("rapi.commands.load.stop_server", lambda: called.append(1) or True)
+    monkeypatch.setattr("rapi.commands.load.stop_server", lambda *a, **k: called.append(1) or True)
     load_cmd.run(SimpleNamespace(file=str(f), replace=True))
     assert called
 
 
 def test_delete_stops_server(tmp_store, monkeypatch, capsys):
-    monkeypatch.setattr("rapi.commands.delete.get_pid", lambda: 42)
-    monkeypatch.setattr("rapi.commands.delete.stop_server", lambda: True)
+    monkeypatch.setattr("rapi.commands.delete.get_pid", lambda *a, **k: 42)
+    monkeypatch.setattr("rapi.commands.delete.stop_server", lambda *a, **k: True)
     delete_cmd.run(SimpleNamespace(name=None, all=True))
     assert "Stopped" in capsys.readouterr().out
 
@@ -203,7 +205,7 @@ def test_run_server_background_child(tmp_store, monkeypatch, tmp_path):
     monkeypatch.setattr(srv, "state_dir", lambda: state)
     monkeypatch.setattr(srv, "DefinitionStore", lambda: tmp_store)
     tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET"))
-    monkeypatch.setattr(srv, "is_running", lambda: False)
+    monkeypatch.setattr(srv, "is_running", lambda *a, **k: False)
 
     class FakeServer:
         def __init__(self, *a, **k):
@@ -215,7 +217,7 @@ def test_run_server_background_child(tmp_store, monkeypatch, tmp_path):
 
     monkeypatch.setattr(srv, "HTTPServer", FakeServer)
     monkeypatch.setattr(os, "fork", lambda: 0)  # child
-    monkeypatch.setattr(os, "setsid", lambda: None)
+    monkeypatch.setattr(os, "setsid", lambda *a, **k: None)
     # avoid closing real stdin issues - setsid and close already in code
     srv.run_server(background=True)
 
@@ -251,7 +253,7 @@ def test_status_with_rules(tmp_store, monkeypatch, capsys):
         name="POST:/r", path="/r", method="POST",
         rules=[Rule(conditions={"body.id": "1"}, response=ResponseSpec(400, "e"))],
     ))
-    monkeypatch.setattr("rapi.commands.status.get_pid", lambda: None)
+    monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
     from rapi.commands import status as status_cmd
     status_cmd.run(SimpleNamespace())
     assert "rule" in capsys.readouterr().out
@@ -276,7 +278,9 @@ def test_stop_server_oserror_on_kill(tmp_path, monkeypatch):
     state = tmp_path / "s"
     state.mkdir()
     monkeypatch.setattr(srv, "state_dir", lambda: state)
-    (state / "rapi.pid").write_text(str(os.getpid()), encoding="utf-8")
+    g = state / "groups" / "default"
+    g.mkdir(parents=True, exist_ok=True)
+    (g / "rapi.pid").write_text(str(os.getpid()), encoding="utf-8")
 
     def boom(pid, sig):
         if sig == signal.SIGTERM:
@@ -315,7 +319,7 @@ def test_host_looks_like_json_branches(tmp_store, capsys):
 
 def test_delete_not_found_lists(tmp_store, monkeypatch, capsys):
     tmp_store.upsert(Endpoint(name="GET:/keep", path="/keep", method="GET"))
-    monkeypatch.setattr("rapi.commands.delete.get_pid", lambda: None)
+    monkeypatch.setattr("rapi.commands.delete.get_pid", lambda *a, **k: None)
     delete_cmd.run(SimpleNamespace(name="nope", all=False))
     out = capsys.readouterr().out
     assert "Not found" in out

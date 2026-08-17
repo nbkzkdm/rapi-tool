@@ -64,3 +64,16 @@ def test_import_replace(tmp_store: DefinitionStore):
     tmp_store.import_from([{"path": "/new", "method": "GET"}], merge=False)
     names = [e.path for e in tmp_store.list()]
     assert names == ["/new"]
+
+
+def test_list_group_and_delete_group_guard(tmp_store: DefinitionStore):
+    tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET", group="g1"))
+    tmp_store.upsert(Endpoint(name="GET:/b", path="/b", method="GET", group="g2"))
+    assert len(tmp_store.list_group("g1")) == 1
+    assert len(tmp_store.list_group("g2")) == 1
+    # wrong group refuses delete by name
+    assert tmp_store.delete("GET:/a", group="g2") is False
+    assert tmp_store.get("GET:/a") is not None
+    # path delete skips other groups
+    assert tmp_store.delete("/b", group="g1") is False
+    assert tmp_store.delete("/b", group="g2") is True

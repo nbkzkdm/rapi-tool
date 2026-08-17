@@ -117,14 +117,14 @@ def test_status(tmp_store: DefinitionStore, capsys, monkeypatch):
             default=ResponseSpec(status=200, body="x"),
         )
     )
-    monkeypatch.setattr("rapi.commands.status.get_pid", lambda: None)
+    monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
     status_cmd.run(SimpleNamespace())
     out = capsys.readouterr().out
     assert "not running" in out
     assert "POST" in out
 
-    monkeypatch.setattr("rapi.commands.status.get_pid", lambda: 123)
-    monkeypatch.setattr("rapi.commands.status.get_port", lambda: 9000)
+    monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: 123)
+    monkeypatch.setattr("rapi.commands.status.get_port", lambda *a, **k: 9000)
     status_cmd.run(SimpleNamespace())
     out = capsys.readouterr().out
     assert "running" in out
@@ -132,23 +132,23 @@ def test_status(tmp_store: DefinitionStore, capsys, monkeypatch):
 
 
 def test_stop(monkeypatch, capsys):
-    monkeypatch.setattr("rapi.commands.stop.get_pid", lambda: None)
+    monkeypatch.setattr("rapi.commands.stop.get_pid", lambda *a, **k: None)
     stop_cmd.run(SimpleNamespace())
-    assert "Not running" in capsys.readouterr().out
+    assert "not running" in capsys.readouterr().out.lower()
 
-    monkeypatch.setattr("rapi.commands.stop.get_pid", lambda: 1)
-    monkeypatch.setattr("rapi.commands.stop.stop_server", lambda: True)
+    monkeypatch.setattr("rapi.commands.stop.get_pid", lambda *a, **k: 1)
+    monkeypatch.setattr("rapi.commands.stop.stop_server", lambda *a, **k: True)
     stop_cmd.run(SimpleNamespace())
     assert "Stopped" in capsys.readouterr().out
 
-    monkeypatch.setattr("rapi.commands.stop.stop_server", lambda: False)
+    monkeypatch.setattr("rapi.commands.stop.stop_server", lambda *a, **k: False)
     stop_cmd.run(SimpleNamespace())
     assert "Failed" in capsys.readouterr().out
 
 
 def test_delete(tmp_store: DefinitionStore, monkeypatch, capsys):
     tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET"))
-    monkeypatch.setattr("rapi.commands.delete.get_pid", lambda: None)
+    monkeypatch.setattr("rapi.commands.delete.get_pid", lambda *a, **k: None)
     delete_cmd.run(SimpleNamespace(name="/a", all=False))
     tmp_store.load()
     assert tmp_store.list() == []
@@ -168,18 +168,18 @@ def test_delete(tmp_store: DefinitionStore, monkeypatch, capsys):
 def test_start_restart(monkeypatch, tmp_store: DefinitionStore):
     called = {}
 
-    def fake_run_server(host="127.0.0.1", port=8000, background=True):
-        called["args"] = (host, port, background)
+    def fake_run_server(host="127.0.0.1", port=8000, background=True, group="default"):
+        called["args"] = (host, port, background, group)
 
     monkeypatch.setattr("rapi.commands.start.run_server", fake_run_server)
-    start_cmd.run(SimpleNamespace(host="0.0.0.0", port=9000, foreground=True))
-    assert called["args"] == ("0.0.0.0", 9000, False)
+    start_cmd.run(SimpleNamespace(host="0.0.0.0", port=9000, foreground=True, group="default"))
+    assert called["args"] == ("0.0.0.0", 9000, False, "default")
 
-    monkeypatch.setattr("rapi.commands.restart.get_pid", lambda: 1)
-    monkeypatch.setattr("rapi.commands.restart.stop_server", lambda: True)
+    monkeypatch.setattr("rapi.commands.restart.get_pid", lambda *a, **k: 1)
+    monkeypatch.setattr("rapi.commands.restart.stop_server", lambda *a, **k: True)
     monkeypatch.setattr("rapi.commands.restart.run_server", fake_run_server)
     monkeypatch.setattr("rapi.commands.restart.time.sleep", lambda s: None)
-    restart_cmd.run(SimpleNamespace(host="127.0.0.1", port=8000))
+    restart_cmd.run(SimpleNamespace(host="127.0.0.1", port=8000, group="default"))
     assert called["args"][2] is True
 
 
@@ -244,3 +244,41 @@ def test_host_list_item_file_ok(tmp_store, tmp_path, capsys):
     assert ep.list_key == "results"
     assert ep.list_count == 2
     assert "list" in capsys.readouterr().out
+
+
+def test_load_group_override_list(tmp_store: DefinitionStore, tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("rapi.commands.load.get_pid", lambda *a, **k: None)
+    f = tmp_path / "eps.json"
+    f.write_text(json.dumps([
+        {"path": "/g1", "method": "GET", "default": {"status": 200, "body": "x"}},
+        "skip-me",
+    ]), encoding="utf-8")
+    load_cmd.run(SimpleNamespace(file=str(f), fmt="json", replace=True, group="team-a"))
+    tmp_store.load()
+    eps = [e for e in tmp_store.list() if e.path == "/g1"]
+    assert eps and eps[0].group == "team-a"
+
+
+def test_load_group_override_wrapped(tmp_store: DefinitionStore, tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("rapi.commands.load.get_pid", lambda *a, **k: None)
+    f = tmp_path / "eps2.json"
+    f.write_text(json.dumps({
+        "endpoints": [
+            {"path": "/g2", "method": "POST", "default": {"status": 201, "body": "y"}},
+            None,
+        ]
+    }), encoding="utf-8")
+    load_cmd.run(SimpleNamespace(file=str(f), fmt="json", replace=False, group="team-b"))
+    tmp_store.load()
+    eps = [e for e in tmp_store.list() if e.path == "/g2"]
+    assert eps and eps[0].group == "team-b"
+
+
+def test_status_filter_group(tmp_store: DefinitionStore, monkeypatch, capsys):
+    tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET", group="only-me"))
+    tmp_store.upsert(Endpoint(name="GET:/b", path="/b", method="GET", group="other"))
+    monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
+    status_cmd.run(SimpleNamespace(group="only-me"))
+    out = capsys.readouterr().out
+    assert "[only-me]" in out
+    assert "/a" in out

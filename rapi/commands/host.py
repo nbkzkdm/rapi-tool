@@ -46,6 +46,8 @@ examples:
                    help="Required query param (KEY, KEY=val, KEY=~regex)")
     p.add_argument("--strict", action="store_true", help="Reject extra query params")
     p.add_argument("--name", default=None, help="Definition name (default: METHOD:path)")
+    p.add_argument("--group", default="default",
+                   help="Definition group (default: default). Used to split processes")
     # conditional rules via repeated --when / --status / --response groups is awkward;
     # we collect --when and pair with following --rule-status / --rule-response
     p.add_argument("--when", action="append", default=[], metavar="COND",
@@ -159,6 +161,7 @@ def run(args: argparse.Namespace) -> None:
         name=name,
         path=path,
         method=method,
+        group=getattr(args, "group", "default") or "default",
         default=default,
         rules=rules,
         params=params,
@@ -174,6 +177,7 @@ def run(args: argparse.Namespace) -> None:
     store.upsert(ep)
 
     print(f"Registered: {ep.method} {ep.path}")
+    print(f"  group    : {ep.group}")
     print(f"  name     : {ep.name}")
     print(f"  status   : {ep.default.status}")
     prev = ep.default.body if len(ep.default.body) < 60 else ep.default.body[:57] + "..."
