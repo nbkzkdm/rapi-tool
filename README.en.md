@@ -10,10 +10,9 @@ Clients call it like a normal HTTP API (GET / POST / QUERY, etc.).
 
 
 > **Direction**  
-> For now, the primary path is the CLI (`host` → `start`), prioritizing quick local test mocks.  
-> Future work will also grow **OpenAPI into a solid, usable primary input path** (starting with examples and basic path/method/parameters).  
-> *In other words: some OpenAPI patterns probably won’t be supported — sorry about that.*  
-> rapi-specific features (conditional rules, list generation, etc.) can still be layered on via `x-rapi-*` extensions and CLI options — a two-layer model.
+> For now, the primary path is the CLI (`host` → `start`) so you can spin up local test mocks quickly.  
+> Future work will gradually make **OpenAPI a first-class input path** as well (starting with examples and basic path/method/parameters).  
+> rapi-specific features (conditional rules, list generation, etc.) remain available via CLI options and `x-rapi-*` extensions — a two-layer model.
 
 ## Features
 
@@ -95,6 +94,60 @@ rapi stop
 ```
 
 On start, PID and port are written to `~/.rapi/rapi.log`.
+
+
+## Path + query examples
+
+### List (query)
+
+```bash
+rapi host /items get \
+  --param 'limit=~^\d+$' \
+  --param offset \
+  -r '{"limit":"{INPUT.query.limit}","offset":"{INPUT.query.offset}"}'
+
+rapi start --port 8000
+curl 'http://127.0.0.1:8000/items?limit=10&offset=0'
+```
+
+### Detail (path parameter)
+
+```bash
+rapi host '/items/{id}' get \
+  -r '{"id":"{INPUT.path.id}"}'
+
+curl http://127.0.0.1:8000/items/42
+```
+
+### Path + query
+
+```bash
+rapi host '/users/{userId}/orders' get \
+  --param 'status=open' \
+  -r '{"userId":"{INPUT.path.userId}","status":"{INPUT.query.status}"}'
+
+curl 'http://127.0.0.1:8000/users/u1/orders?status=open'
+```
+
+### Path condition → error branch
+
+```bash
+rapi host '/users/{id}' get \
+  -r '{"id":"{INPUT.path.id}","ok":true}' \
+  --when 'path.id=000' \
+  --rule-status 404 \
+  --rule-response '{"error":"not found","id":"{INPUT.path.id}"}'
+```
+
+### Multiple query params + strict
+
+```bash
+rapi host /search get \
+  --param q \
+  --param 'page=~^\d+$' \
+  --strict \
+  -r '{"q":"{INPUT.query.q}","page":"{INPUT.query.page}"}'
+```
 
 ## Placeholders
 

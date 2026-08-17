@@ -12,8 +12,8 @@
 > **方針メモ**  
 > 当面は CLI（`host` → `start`）を主経路とし、手元のテスト用モックを素早く立てることを優先します。  
 > 今後の改修では、既存の OpenAPI を **きちんと取り込んで使える主経路** としても育てていきます（example・基本的な path/method/parameter などから順に）。  
-> ※つまり、取り込めないパターンがあるだろうと思ってる（それについてはごめんね）
 > 独自の条件分岐や一覧生成は、必要に応じて `x-rapi-*` や CLI オプションで補完する二階建てのイメージです。
+> 詳細ドキュメントは落ち着いたタイミングで GitHub Wiki にもまとめる予定です（後回し）。
 
 ## なにができるか
 
@@ -112,7 +112,9 @@ rapi status
 rapi stop
 ```
 
-起動時の PID とポートは `~/.rapi/rapi.log` に記録されます。
+起動時の PID とポートはグループごとに `~/.rapi/groups/<group>/rapi.log` に記録されます。
+
+パスパラメータやクエリの応用例は、[パス + クエリの組み合わせ例](#パス--クエリの組み合わせ例) を参照してください。
 
 
 ## パスパラメータ
@@ -131,6 +133,71 @@ curl http://127.0.0.1:8000/users/42
 | `{INPUT.path}` | 実際のパス全体（`/users/42`） |
 | `{INPUT.path.id}` | パスパラメータ `id` |
 | `--when 'path.id=000'` | 条件にも利用可 |
+
+
+## パス + クエリの組み合わせ例
+
+### 一覧（クエリ）
+
+```bash
+rapi host /items get \
+  --param 'limit=~^\d+$' \
+  --param offset \
+  -r '{"limit":"{INPUT.query.limit}","offset":"{INPUT.query.offset}"}'
+
+rapi start --port 8000
+curl 'http://127.0.0.1:8000/items?limit=10&offset=0'
+```
+
+### 詳細（パスパラメータ）
+
+```bash
+rapi host '/items/{id}' get \
+  -r '{"id":"{INPUT.path.id}"}'
+
+curl http://127.0.0.1:8000/items/42
+# → {"id":"42"}
+```
+
+### パス + クエリ
+
+```bash
+rapi host '/users/{userId}/orders' get \
+  --param 'status=open' \
+  -r '{"userId":"{INPUT.path.userId}","status":"{INPUT.query.status}"}'
+
+curl 'http://127.0.0.1:8000/users/u1/orders?status=open'
+```
+
+### パス条件でエラー分岐
+
+```bash
+rapi host '/users/{id}' get \
+  -r '{"id":"{INPUT.path.id}","ok":true}' \
+  --when 'path.id=000' \
+  --rule-status 404 \
+  --rule-response '{"error":"not found","id":"{INPUT.path.id}"}'
+
+curl http://127.0.0.1:8000/users/000
+# → 404
+curl http://127.0.0.1:8000/users/001
+# → 200
+```
+
+### 複数クエリ + strict
+
+```bash
+rapi host /search get \
+  --param q \
+  --param 'page=~^\d+$' \
+  --strict \
+  -r '{"q":"{INPUT.query.q}","page":"{INPUT.query.page}"}'
+
+# OK
+curl 'http://127.0.0.1:8000/search?q=test&page=1'
+# NG（余分なクエリ）
+curl 'http://127.0.0.1:8000/search?q=test&page=1&extra=1'
+```
 
 ## プレースホルダー
 
