@@ -24,6 +24,10 @@ unzip rapi-tool.zip
 cd rapi-tool
 sh install.sh
 # installs to ~/.local/bin/rapi by default
+# also runs pip install -r requirements.txt when possible (PyYAML for OpenAPI)
+
+# install runtime deps only
+pip install -r requirements.txt
 
 # ensure PATH includes it if needed
 export PATH="$HOME/.local/bin:$PATH"
@@ -290,12 +294,42 @@ curl -X POST -d '{"id":"999"}' http://127.0.0.1:8000/api/item
 
 You can mix `--rule-response` and `--rule-response-file` (each pairs with the `--when` at the same index).
 
+
+## List responses (envelope + item)
+
+```bash
+rapi host /items get \
+  -f envelope.json \
+  --list-key results \
+  --list-item-file item.json \
+  --list-count 3
+```
+
+- `{INDEX}` / `{INDEX:05}` — zero-padded index in the item template
+- `{LIST_COUNT}` — count inside the envelope
+- `--list-start` — starting index (default 1)
+
 ## QUERY (RFC 10008)
 
 ```bash
 rapi host /search query -r '{"results":[]}'
 rapi start
 ```
+
+
+## OpenAPI save / load
+
+```bash
+rapi save openapi.yaml --format openapi
+# standard OpenAPI only (no x-rapi-*)
+rapi save openapi.yaml --format openapi --no-x-rapi
+rapi load openapi.yaml
+rapi load openapi.yaml --format openapi --replace
+```
+
+- Uses standard `paths` / `responses` / `example`
+- rapi-specific rules/lists are kept in `x-rapi-*` extensions
+- Requires **PyYAML** (`install.sh` or `pip install -r requirements.txt`)
 
 ## Save / load definitions
 

@@ -73,3 +73,39 @@ class TestEndpoint:
         assert ep.params["aaa"] == "1"
         assert ep.params["bbb"] is None
         assert ep.params["c"] == "3"
+
+
+def test_endpoint_list_roundtrip():
+    ep = Endpoint(
+        name="GET:/items",
+        path="/items",
+        method="GET",
+        default=ResponseSpec(body='{"results":[]}'),
+        list_key="results",
+        list_item='{"id":"{INDEX:05}"}',
+        list_count=10,
+        list_start=0,
+    )
+    d = ep.to_dict()
+    assert d["list_key"] == "results"
+    assert d["list_count"] == 10
+    assert d["list_start"] == 0
+    ep2 = Endpoint.from_dict(d)
+    assert ep2.list_key == "results"
+    assert ep2.list_item == '{"id":"{INDEX:05}"}'
+    assert ep2.list_count == 10
+    assert ep2.list_start == 0
+
+
+def test_endpoint_from_dict_flat_with_list():
+    ep = Endpoint.from_dict({
+        "path": "/x",
+        "method": "GET",
+        "status": 200,
+        "response": '{"results":[]}',
+        "list_key": "results",
+        "list_item": "{}",
+        "list_count": 1,
+    })
+    assert ep.default.status == 200
+    assert ep.list_key == "results"

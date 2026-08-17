@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from .matching import match_body_pattern, match_conditions, match_value
 from .models import Endpoint, ResponseSpec
 from .placeholders import apply_placeholders, build_input_context
+from .listgen import expand_list_in_body
 from .store import DefinitionStore, default_store_path
 
 
@@ -266,7 +267,17 @@ class MockHandler(BaseHTTPRequestHandler):
             headers=headers,
             body_text=body_text,
         )
-        body_out = apply_placeholders(chosen.body, ctx)
+        # list expansion applies to default response only (rules keep explicit bodies)
+        body_src = chosen.body
+        if matched_rule is None and ep.list_key:
+            body_src = expand_list_in_body(
+                body_src,
+                list_key=ep.list_key,
+                list_item=ep.list_item,
+                list_count=ep.list_count,
+                list_start=ep.list_start,
+            )
+        body_out = apply_placeholders(body_src, ctx)
 
         ct = chosen.content_type
         if ct is None:

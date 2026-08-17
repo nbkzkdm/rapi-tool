@@ -24,6 +24,10 @@ unzip rapi-tool.zip
 cd rapi-tool
 sh install.sh
 # デフォルトで ~/.local/bin/rapi を作成
+# requirements.txt（PyYAML 等）も可能な範囲で pip install します
+
+# 依存だけ別途入れる場合
+pip install -r requirements.txt
 
 # PATH に通す（未設定の場合）
 export PATH="$HOME/.local/bin:$PATH"
@@ -284,6 +288,54 @@ curl -X POST -d '{"id":"999"}' http://127.0.0.1:8000/api/item
 
 `--rule-response` と `--rule-response-file` を混在させることもできます（それぞれ同じ順番の `--when` に対応）。
 
+
+## 一覧レスポンス（envelope + item）
+
+全体の JSON（envelope）と、配列1件分の雛形（item）を分けて指定します。
+
+```bash
+cat > envelope.json << 'EOF'
+{"status":"ok","total":"{LIST_COUNT}","results":[]}
+EOF
+
+cat > item.json << 'EOF'
+{"id":"TEST_{INDEX:05}","name":"item-{INDEX:03}"}
+EOF
+
+rapi host /items get   -f envelope.json   --list-key results   --list-item-file item.json   --list-count 3
+
+rapi start --port 8000
+curl http://127.0.0.1:8000/items
+```
+
+返る例:
+
+```json
+{
+  "status": "ok",
+  "total": "3",
+  "results": [
+    {"id": "TEST_00001", "name": "item-001"},
+    {"id": "TEST_00002", "name": "item-002"},
+    {"id": "TEST_00003", "name": "item-003"}
+  ]
+}
+```
+
+| オプション | 意味 |
+|-----------|------|
+| `-f` / `-r` | envelope（全体）。`results` と同列のフィールドもここに書く |
+| `--list-key` | 配列を埋めるフィールド（`results` や `data.items`） |
+| `--list-item` / `--list-item-file` | 1件分の JSON 雛形 |
+| `--list-count` | 件数 |
+| `--list-start` | `{INDEX}` の開始値（デフォルト 1） |
+
+| 記法 | 例（INDEX=1） |
+|------|----------------|
+| `{INDEX}` | `1` |
+| `{INDEX:05}` | `00001` |
+| `{LIST_COUNT}` | envelope 内の件数埋め込み |
+
 ## QUERY（RFC 10008）
 
 ```bash
@@ -291,11 +343,33 @@ rapi host /search query -r '{"results":[]}'
 rapi start
 ```
 
+
+## OpenAPI 形式の保存・読込
+
+```bash
+# OpenAPI 3 YAML として書き出し
+rapi save openapi.yaml --format openapi
+# x-rapi-* なし（標準 OpenAPI のみ）
+rapi save openapi.yaml --format openapi --no-x-rapi
+
+# 読み込み（拡張子 .yaml/.yml は自動判定）
+rapi load openapi.yaml
+rapi load openapi.yaml --format openapi --replace
+```
+
+- 標準の `paths` / `responses` / `example` を利用
+- rapi 独自の条件・一覧などは `x-rapi-*` 拡張に保持（再読込で復元）
+- OpenAPI 利用時は **PyYAML** が必要（`install.sh` または `pip install -r requirements.txt`）
+
 ## 定義の保存・読み込み
 
 ```bash
 rapi save my-mocks.json
+rapi save openapi.yaml --format openapi
+# x-rapi-* なし（標準 OpenAPI のみ）
+rapi save openapi.yaml --format openapi --no-x-rapi
 rapi load my-mocks.json
+rapi load openapi.yaml --format openapi
 rapi load my-mocks.json --replace
 ```
 

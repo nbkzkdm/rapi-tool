@@ -66,6 +66,11 @@ class Endpoint:
     params: dict[str, str | None] = field(default_factory=dict)  # required query params
     strict_params: bool = False
     expected_body: str | None = None  # exact or ~regex for request body validation
+    # list expansion (envelope + item template)
+    list_key: str | None = None
+    list_item: str | None = None  # JSON template for one element
+    list_count: int | None = None
+    list_start: int = 1
 
     def __post_init__(self) -> None:
         if not self.path.startswith("/"):
@@ -88,6 +93,14 @@ class Endpoint:
             d["strict_params"] = True
         if self.expected_body is not None:
             d["expected_body"] = self.expected_body
+        if self.list_key:
+            d["list_key"] = self.list_key
+        if self.list_item is not None:
+            d["list_item"] = self.list_item
+        if self.list_count is not None:
+            d["list_count"] = self.list_count
+        if self.list_start != 1:
+            d["list_start"] = self.list_start
         return d
 
     @classmethod
@@ -127,4 +140,8 @@ class Endpoint:
             params={str(k): (None if v is None else str(v)) for k, v in params.items()},
             strict_params=bool(data.get("strict_params") or data.get("strict", False)),
             expected_body=data.get("expected_body") or data.get("body"),
+            list_key=data.get("list_key"),
+            list_item=data.get("list_item"),
+            list_count=(int(data["list_count"]) if data.get("list_count") is not None else None),
+            list_start=int(data.get("list_start", 1)),
         )

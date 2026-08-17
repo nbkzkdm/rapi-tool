@@ -12,6 +12,21 @@ exec python3 -m rapi "\$@"
 WRAP
 chmod 755 "$BIN_DIR/rapi" 2>/dev/null || true
 
+# Optional runtime deps (OpenAPI YAML support)
+if [ -f "$ROOT/requirements.txt" ]; then
+  if command -v pip3 >/dev/null 2>&1; then
+    echo "Installing Python dependencies (requirements.txt)..."
+    pip3 install -r "$ROOT/requirements.txt" || \
+      echo "Warning: pip install failed. OpenAPI YAML may need: pip install pyyaml"
+  elif command -v pip >/dev/null 2>&1; then
+    echo "Installing Python dependencies (requirements.txt)..."
+    pip install -r "$ROOT/requirements.txt" || \
+      echo "Warning: pip install failed. OpenAPI YAML may need: pip install pyyaml"
+  else
+    echo "Note: pip not found. For OpenAPI YAML support: pip install -r requirements.txt"
+  fi
+fi
+
 echo "Installed: $BIN_DIR/rapi"
 echo ""
 echo "Make sure $BIN_DIR is in your PATH:"

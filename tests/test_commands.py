@@ -198,3 +198,49 @@ def test_main_cli(tmp_store: DefinitionStore):
         main([])  # missing command
 
     main(["status"])
+
+
+def test_host_list_validation_errors(tmp_store):
+    def base(**kw):
+        d = dict(
+            path="/items", method="GET", response='{"results":[]}', response_file=None,
+            status=200, content_type=None, body=None, body_file=None,
+            param=[], strict=False, name=None, when=[], rule_status=[],
+            rule_response=[], rule_response_file=[],
+            list_item=None, list_item_file=None, list_start=1,
+            list_key=None, list_count=None,
+        )
+        d.update(kw)
+        return SimpleNamespace(**d)
+    # list_key without item
+    with pytest.raises(SystemExit):
+        host_cmd.run(base(list_key="results", list_count=3))
+    # list_key without count
+    with pytest.raises(SystemExit):
+        host_cmd.run(base(list_key="results", list_item='{"a":1}'))
+    # missing list item file
+    with pytest.raises(SystemExit):
+        host_cmd.run(base(
+            list_key="results", list_count=2,
+            list_item_file="/no/such/item.json",
+        ))
+
+
+def test_host_list_item_file_ok(tmp_store, tmp_path, capsys):
+    item = tmp_path / "item.json"
+    item.write_text('{"id":"{INDEX:03}"}', encoding="utf-8")
+    args = SimpleNamespace(
+        path="/items", method="GET", response='{"status":"ok","results":[]}',
+        response_file=None, status=200, content_type=None, body=None, body_file=None,
+        param=[], strict=False, name=None, when=[], rule_status=[],
+        rule_response=[], rule_response_file=[],
+        list_key="results", list_item=None, list_item_file=str(item),
+        list_count=2, list_start=1,
+    )
+    host_cmd.run(args)
+    tmp_store.load()
+    ep = tmp_store.get_by_path_method("/items", "GET")
+    assert ep is not None
+    assert ep.list_key == "results"
+    assert ep.list_count == 2
+    assert "list" in capsys.readouterr().out

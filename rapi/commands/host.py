@@ -56,6 +56,16 @@ examples:
                    help="Body for the corresponding --when (order matched)")
     p.add_argument("--rule-response-file", action="append", default=[], dest="rule_response_file",
                    help="Body file for the corresponding --when")
+    p.add_argument("--list-key", default=None,
+                   help="Envelope field path to fill with a generated list (e.g. results)")
+    p.add_argument("--list-item", default=None,
+                   help="JSON template for one list element (supports {INDEX}, {INDEX:05})")
+    p.add_argument("--list-item-file", default=None,
+                   help="Load list item template from file")
+    p.add_argument("--list-count", type=int, default=None,
+                   help="Number of list items to generate")
+    p.add_argument("--list-start", type=int, default=1,
+                   help="Start index for {INDEX} (default: 1)")
     p.set_defaults(func=run)
 
 
@@ -129,6 +139,21 @@ def run(args: argparse.Namespace) -> None:
             response=ResponseSpec(status=st, body=rb, content_type="application/json" if _looks_like_json(rb) else None),
         ))
 
+    list_item = getattr(args, "list_item", None)
+    if getattr(args, "list_item_file", None):
+        lip = Path(args.list_item_file)
+        if not lip.is_file():
+            raise SystemExit(f"list item file not found: {args.list_item_file}")
+        list_item = lip.read_text(encoding="utf-8")
+
+    list_key = getattr(args, "list_key", None)
+    list_count = getattr(args, "list_count", None)
+    list_start = getattr(args, "list_start", 1)
+    if list_key and list_item is None:
+        raise SystemExit("--list-key requires --list-item or --list-item-file")
+    if list_key and list_count is None:
+        raise SystemExit("--list-key requires --list-count")
+
     name = args.name or f"{method}:{path}"
     ep = Endpoint(
         name=name,
@@ -139,6 +164,10 @@ def run(args: argparse.Namespace) -> None:
         params=params,
         strict_params=args.strict,
         expected_body=expected_body,
+        list_key=list_key,
+        list_item=list_item,
+        list_count=list_count,
+        list_start=list_start,
     )
 
     store = DefinitionStore()
