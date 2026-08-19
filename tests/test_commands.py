@@ -118,14 +118,15 @@ def test_status(tmp_store: DefinitionStore, capsys, monkeypatch):
         )
     )
     monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
-    status_cmd.run(SimpleNamespace())
+    status_cmd.run(SimpleNamespace(group=None, verbose=False))
     out = capsys.readouterr().out
     assert "not running" in out
     assert "POST" in out
+    assert "=== Server ===" in out
 
     monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: 123)
     monkeypatch.setattr("rapi.commands.status.get_port", lambda *a, **k: 9000)
-    status_cmd.run(SimpleNamespace())
+    status_cmd.run(SimpleNamespace(group=None, verbose=False))
     out = capsys.readouterr().out
     assert "running" in out
     assert "9000" in out
@@ -280,7 +281,7 @@ def test_status_filter_group(tmp_store: DefinitionStore, monkeypatch, capsys):
     tmp_store.upsert(Endpoint(name="GET:/a", path="/a", method="GET", group="only-me"))
     tmp_store.upsert(Endpoint(name="GET:/b", path="/b", method="GET", group="other"))
     monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
-    status_cmd.run(SimpleNamespace(group="only-me"))
+    status_cmd.run(SimpleNamespace(group="only-me", verbose=False))
     out = capsys.readouterr().out
     assert "[only-me]" in out
     assert "/a" in out
@@ -314,3 +315,35 @@ def test_stop_force_and_stale(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "1234" in out
     assert "force" in out.lower() or "SIGKILL" in out or "stopped" in out.lower()
+
+
+def test_status_verbose_details(tmp_store: DefinitionStore, monkeypatch, capsys):
+    from rapi.core.models import Rule
+    tmp_store.upsert(
+        Endpoint(
+            name="GET:/slow",
+            path="/slow",
+            method="GET",
+            group="default",
+            default=ResponseSpec(status=200, body='{"ok":true}', delay_ms=1500),
+            params={"q": "1"},
+            strict_params=True,
+            list_key="results",
+            list_item="{}",
+            list_count=3,
+            rules=[
+                Rule(
+                    conditions={"query.q": "x"},
+                    response=ResponseSpec(status=400, body="bad", delay_ms=100),
+                )
+            ],
+        )
+    )
+    monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
+    status_cmd.run(SimpleNamespace(group="default", verbose=True))
+    out = capsys.readouterr().out
+    assert "delay=1500ms" in out
+    assert "rules=1" in out
+    assert "query:" in out
+    assert "list key=results" in out
+    assert "response:" in out

@@ -66,12 +66,27 @@ rapi stop
 | `rapi start` | サーバー起動（`--port` / `--group`。グループごとに別プロセス） |
 | `rapi stop` | 停止（`--force` で PID に即 SIGKILL） |
 | `rapi restart` | 再起動 |
-| `rapi status` | 起動状態と定義一覧 |
+| `rapi status` | 起動状態と定義一覧（`-v` で詳細） |
 | `rapi delete` | 定義削除（起動中なら停止） |
 | `rapi save` | 定義を JSON に書き出し |
 | `rapi load` | JSON から定義を読み込み |
 
 
+
+
+## サーバー状態（status）
+
+```bash
+rapi status
+rapi status --group default
+rapi status -v                 # params / response 本文なども表示
+```
+
+表示の目安:
+
+- **Server** … グループごとの running / pid / listen / log
+- **Store** … 定義ファイルの場所と件数
+- **Definitions** … method / path / status / delay / rules / query 条件
 
 ## サーバー停止
 
