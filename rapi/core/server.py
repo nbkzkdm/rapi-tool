@@ -197,7 +197,44 @@ class MockHandler(BaseHTTPRequestHandler):
         except Exception:  # pragma: no cover
             pass
 
+    def _log_request(
+        self,
+        *,
+        status: int,
+        duration_ms: float,
+        endpoint: str | None = None,
+        query: dict[str, list[str]] | None = None,
+        body_text: str | None = "",
+        path_params: dict[str, str] | None = None,
+        note: str | None = None,
+    ) -> None:
+        """Structured request log (stdout → rapi.log when background)."""
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{ts}] REQ  {self.command} {self.path}")
+        line = f"         status={status}  duration={duration_ms:.0f}ms"
+        if endpoint:
+            line += f"  endpoint={endpoint}"
+        if note:
+            line += f"  ({note})"
+        print(line)
+        if path_params:
+            print(f"         path_params={path_params}")
+        if query:
+            qflat = {k: (v[0] if v else "") for k, v in query.items()}
+            if qflat:
+                print(f"         query={qflat}")
+        if body_text is None:
+            print("         body=<binary>")
+        elif body_text != "":
+            shown = body_text if len(body_text) <= 500 else body_text[:500] + "...(truncated)"
+            print(f"         body={shown}")
+        try:
+            sys.stdout.flush()
+        except Exception:  # pragma: no cover
+            pass
+
     def handle_request(self) -> None:
+        t0 = time.monotonic()
         content_length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(content_length) if content_length else b""
 
@@ -213,14 +250,22 @@ class MockHandler(BaseHTTPRequestHandler):
 
         ep, path_params = self._find()
         if ep is None:
+            q404 = parse_qs(urlparse(self.path).query, keep_blank_values=True)
             self._log_error(
                 404,
                 "no matching endpoint",
-                query=parse_qs(urlparse(self.path).query, keep_blank_values=True),
+                query=q404,
                 body_text=body_text,
                 extra={"registered": [f"{e.method} {e.path}" for e in self.endpoints]},
             )
             self._send(404, b"Not Found", "text/plain; charset=utf-8")
+            self._log_request(
+                status=404,
+                duration_ms=(time.monotonic() - t0) * 1000,
+                query=q404,
+                body_text=body_text,
+                note="no matching endpoint",
+            )
             return
 
         parsed = urlparse(self.path)
@@ -236,6 +281,10 @@ class MockHandler(BaseHTTPRequestHandler):
                     extra={"expected_param": key, "expected_value": expected},
                 )
                 self._send(400, msg.encode("utf-8"), "text/plain; charset=utf-8")
+                self._log_request(
+                    status=400, duration_ms=(time.monotonic() - t0) * 1000,
+                    endpoint=ep.name, query=query, body_text=body_text, note="missing query param",
+                )
                 return
             actual = query[key][0] if query[key] else ""
             if expected is not None and not match_value(actual, expected):
@@ -245,6 +294,10 @@ class MockHandler(BaseHTTPRequestHandler):
                     extra={"param": key, "expected": expected, "actual": actual},
                 )
                 self._send(400, msg.encode("utf-8"), "text/plain; charset=utf-8")
+                self._log_request(
+                    status=400, duration_ms=(time.monotonic() - t0) * 1000,
+                    endpoint=ep.name, query=query, body_text=body_text, note="invalid query param",
+                )
                 return
         if ep.strict_params:
             extras = set(query.keys()) - set(ep.params.keys())
@@ -255,6 +308,10 @@ class MockHandler(BaseHTTPRequestHandler):
                     extra={"allowed_params": list(ep.params.keys()), "extra_params": sorted(extras)},
                 )
                 self._send(400, msg.encode("utf-8"), "text/plain; charset=utf-8")
+                self._log_request(
+                    status=400, duration_ms=(time.monotonic() - t0) * 1000,
+                    endpoint=ep.name, query=query, body_text=body_text, note="unexpected query param",
+                )
                 return
 
         # expected body validation
@@ -266,6 +323,10 @@ class MockHandler(BaseHTTPRequestHandler):
                     extra={"expected_body": ep.expected_body},
                 )
                 self._send(400, b"Binary body cannot be validated", "text/plain; charset=utf-8")
+                self._log_request(
+                    status=400, duration_ms=(time.monotonic() - t0) * 1000,
+                    endpoint=ep.name, query=query, body_text=None, note="binary body",
+                )
                 return
             if not match_body_pattern(body_text, ep.expected_body):
                 self._log_error(
@@ -274,6 +335,10 @@ class MockHandler(BaseHTTPRequestHandler):
                     extra={"expected_body": ep.expected_body},
                 )
                 self._send(400, b"Request body does not match expected", "text/plain; charset=utf-8")
+                self._log_request(
+                    status=400, duration_ms=(time.monotonic() - t0) * 1000,
+                    endpoint=ep.name, query=query, body_text=body_text, note="body mismatch",
+                )
                 return
 
         # select response: rules first (order), then default
@@ -338,8 +403,17 @@ class MockHandler(BaseHTTPRequestHandler):
                 pass
             time.sleep(delay_ms / 1000.0)
 
-        print(f"← {chosen.status}")
         self._send(chosen.status, body_out.encode("utf-8"), ct)
+        note = "rule matched" if matched_rule else None
+        self._log_request(
+            status=chosen.status,
+            duration_ms=(time.monotonic() - t0) * 1000,
+            endpoint=ep.name,
+            query=query,
+            body_text=body_text,
+            path_params=path_params or None,
+            note=note,
+        )
 
     def do_GET(self) -> None:
         self.handle_request()

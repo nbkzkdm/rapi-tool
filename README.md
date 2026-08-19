@@ -74,6 +74,30 @@ rapi stop
 
 
 
+
+## リクエストログ
+
+バックグラウンド起動時、リクエストはグループのログに記録されます。
+
+```bash
+tail -f ~/.rapi/groups/default/rapi.log
+```
+
+例:
+
+```text
+[2026-08-19 21:00:00] REQ  GET /slow?x=1
+         status=200  duration=1503ms  endpoint=GET:/slow
+         query={'x': '1'}
+```
+
+| 項目 | 内容 |
+|------|------|
+| REQ | メソッドとパス（クエリ付き） |
+| status / duration | 応答コードと処理時間（遅延含む） |
+| endpoint | マッチした定義名 |
+| path_params / query / body | リクエスト内容（長い body は省略） |
+
 ## サーバー状態（status）
 
 ```bash

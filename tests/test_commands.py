@@ -347,3 +347,71 @@ def test_status_verbose_details(tmp_store: DefinitionStore, monkeypatch, capsys)
     assert "query:" in out
     assert "list key=results" in out
     assert "response:" in out
+
+
+def test_status_coverage_edges(tmp_store: DefinitionStore, tmp_path, monkeypatch, capsys):
+    from rapi.core import server as srv
+    from rapi.core.models import Rule
+
+    # known groups from state dir
+    state = tmp_path / "st"
+    (state / "groups" / "ghost").mkdir(parents=True)
+    monkeypatch.setattr("rapi.commands.status.state_dir", lambda: state)
+
+    # empty store → default group still listed via ghost dir + empty
+    tmp_store.clear()
+    monkeypatch.setattr("rapi.commands.status.get_pid", lambda *a, **k: None)
+    monkeypatch.setattr("rapi.commands.status.get_port", lambda g: 8123 if g == "ghost" else None)
+    status_cmd.run(SimpleNamespace(group=None, verbose=False))
+    out = capsys.readouterr().out
+    assert "ghost" in out
+    assert "stale" in out or "8123" in out
+
+    # filter group with zero defs
+    status_cmd.run(SimpleNamespace(group="empty-only", verbose=False))
+    out = capsys.readouterr().out
+    assert "defs   : 0" in out or "0" in out
+
+    # body-check + long fields + verbose truncations
+    long_body = "B" * 120
+    long_expect = "E" * 120
+    long_rule = "R" * 120
+    tmp_store.upsert(
+        Endpoint(
+            name="POST:/cov",
+            path="/cov",
+            method="POST",
+            group="default",
+            default=ResponseSpec(status=200, body=long_body, delay_ms=0),
+            expected_body=long_expect,
+            params={"flag": None},
+            strict_params=True,
+            rules=[
+                Rule(conditions={"body.x": "1"}, response=ResponseSpec(status=400, body=long_rule, delay_ms=50)),
+            ],
+        )
+    )
+    status_cmd.run(SimpleNamespace(group="default", verbose=True))
+    out = capsys.readouterr().out
+    assert "body-check" in out
+    assert "strict" in out
+    assert "expect body:" in out
+    assert "..." in out
+    assert "delay=50ms" in out
+
+
+def test_fmt_params_and_known_groups_empty(monkeypatch, tmp_path):
+    from rapi.commands.status import _fmt_params, _known_groups
+    from rapi.core.store import DefinitionStore
+
+    assert _fmt_params({}) == ""
+    assert _fmt_params({"a": None, "b": "1"}) == "a, b=1"
+
+    state = tmp_path / "empty"
+    state.mkdir()
+    monkeypatch.setattr("rapi.commands.status.state_dir", lambda: state)
+    store = DefinitionStore(path=tmp_path / "d.json")
+    store.clear()
+    # no groups dir contents, no endpoints
+    gs = _known_groups(store)
+    assert "default" in gs
