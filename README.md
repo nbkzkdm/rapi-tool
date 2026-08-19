@@ -64,13 +64,31 @@ rapi stop
 |---------|------|
 | `rapi host` | REST 定義を登録（ポートは指定しない。`--group` でグループ分け、省略時 `default`） |
 | `rapi start` | サーバー起動（`--port` / `--group`。グループごとに別プロセス） |
-| `rapi stop` | 停止 |
+| `rapi stop` | 停止（`--force` で PID に即 SIGKILL） |
 | `rapi restart` | 再起動 |
 | `rapi status` | 起動状態と定義一覧 |
 | `rapi delete` | 定義削除（起動中なら停止） |
 | `rapi save` | 定義を JSON に書き出し |
 | `rapi load` | JSON から定義を読み込み |
 
+
+
+## サーバー停止
+
+```bash
+rapi stop --group default
+rapi stop --group default --force   # 記録された PID に即 SIGKILL
+```
+
+PID が取れないときは **プロセスは触りません**。古い pid/port ファイルを消したうえで、確認用コマンドを表示します。
+
+```bash
+ss -ltnp | grep 8000
+lsof -i :8000
+# kill <PID>   または   kill -9 <PID>
+```
+
+ポート番号だけで無関係なプロセスを落とすことはしません。
 
 ## グループ（`--group`）
 

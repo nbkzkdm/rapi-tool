@@ -133,13 +133,15 @@ def test_status(tmp_store: DefinitionStore, capsys, monkeypatch):
 
 def test_stop(monkeypatch, capsys):
     monkeypatch.setattr("rapi.commands.stop.get_pid", lambda *a, **k: None)
-    stop_cmd.run(SimpleNamespace())
-    assert "not running" in capsys.readouterr().out.lower()
+    monkeypatch.setattr("rapi.commands.stop.get_port", lambda *a, **k: None)
+    stop_cmd.run(SimpleNamespace(group="default", force=False))
+    assert "no running process" in capsys.readouterr().out.lower()
 
     monkeypatch.setattr("rapi.commands.stop.get_pid", lambda *a, **k: 1)
     monkeypatch.setattr("rapi.commands.stop.stop_server", lambda *a, **k: True)
-    stop_cmd.run(SimpleNamespace())
-    assert "Stopped" in capsys.readouterr().out
+    stop_cmd.run(SimpleNamespace(group="default", force=False))
+    out = capsys.readouterr().out
+    assert "stopped" in out.lower()
 
     monkeypatch.setattr("rapi.commands.stop.stop_server", lambda *a, **k: False)
     stop_cmd.run(SimpleNamespace())
@@ -282,3 +284,33 @@ def test_status_filter_group(tmp_store: DefinitionStore, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "[only-me]" in out
     assert "/a" in out
+
+
+def test_stop_force_and_stale(tmp_path, monkeypatch, capsys):
+    from rapi.core import server as srv
+
+    state = tmp_path / "st"
+    state.mkdir()
+    monkeypatch.setattr(srv, "state_dir", lambda: state)
+
+    # stale files, no live pid
+    g = state / "groups" / "default"
+    g.mkdir(parents=True)
+    (g / "rapi.pid").write_text("99999999", encoding="utf-8")
+    (g / "rapi.port").write_text("8000", encoding="utf-8")
+
+    stop_cmd.run(SimpleNamespace(group="default", force=False))
+    out = capsys.readouterr().out
+    assert "no running process" in out.lower() or "No running" in out or "has no running" in out
+    assert "ss -ltnp" in out
+    assert "lsof" in out
+    assert not (g / "rapi.pid").exists()
+
+    # force with live-looking pid (mock get_pid + stop)
+    monkeypatch.setattr("rapi.commands.stop.get_pid", lambda *a, **k: 1234)
+    monkeypatch.setattr("rapi.commands.stop.get_port", lambda *a, **k: 8000)
+    monkeypatch.setattr("rapi.commands.stop.stop_server", lambda *a, **k: True)
+    stop_cmd.run(SimpleNamespace(group="default", force=True))
+    out = capsys.readouterr().out
+    assert "1234" in out
+    assert "force" in out.lower() or "SIGKILL" in out or "stopped" in out.lower()

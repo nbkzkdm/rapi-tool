@@ -346,3 +346,45 @@ def test_host_plain_response_not_json_shape(tmp_store):
     ep = tmp_store.get_by_path_method("/plain", "GET")
     assert ep is not None
     assert ep.default.body == "OK"
+
+
+def test_stop_server_force_sigkill(tmp_path, monkeypatch):
+    from rapi.core import server as srv
+
+    state = tmp_path / "sf"
+    state.mkdir()
+    monkeypatch.setattr(srv, "state_dir", lambda: state)
+    g = state / "groups" / "default"
+    g.mkdir(parents=True)
+
+    killed = []
+
+    def fake_kill(pid, sig):
+        killed.append((pid, sig))
+        if sig == 0:
+            return None
+        return None
+
+    # pretend process 4242 is alive
+    (g / "rapi.pid").write_text("4242", encoding="utf-8")
+    (g / "rapi.port").write_text("8000", encoding="utf-8")
+    monkeypatch.setattr(os, "kill", fake_kill)
+
+    assert srv.stop_server(group="default", force=True) is True
+    assert any(sig == signal.SIGKILL for _, sig in killed)
+    assert not (g / "rapi.pid").exists()
+
+
+def test_clear_stale_when_running(tmp_path, monkeypatch):
+    from rapi.core import server as srv
+
+    state = tmp_path / "sr"
+    state.mkdir()
+    monkeypatch.setattr(srv, "state_dir", lambda: state)
+    g = state / "groups" / "default"
+    g.mkdir(parents=True)
+    (g / "rapi.pid").write_text(str(os.getpid()), encoding="utf-8")
+
+    info = srv.clear_stale_state("default")
+    assert info.get("cleared") is False
+    assert info.get("running_pid") == os.getpid()

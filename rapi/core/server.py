@@ -75,29 +75,53 @@ def get_port(group: str = "default") -> int | None:
         return None
 
 
-def stop_server(group: str = "default", timeout: float = 2.0) -> bool:
+def stop_server(group: str = "default", timeout: float = 2.0, force: bool = False) -> bool:
+    """Stop server process for group.
+
+    force=True: send SIGKILL immediately (no TERM wait).
+    Returns True if a live pid was signaled (or force cleaned state).
+    """
     pid = get_pid(group)
     if not pid:
         return False
     try:
-        os.kill(pid, signal.SIGTERM)
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                os.kill(pid, 0)
-                time.sleep(0.1)
-            except OSError:  # pragma: no cover
-                break
-        else:
+        if force:
             try:
                 os.kill(pid, signal.SIGKILL)
             except OSError:  # pragma: no cover
                 pass
+        else:
+            os.kill(pid, signal.SIGTERM)
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                try:
+                    os.kill(pid, 0)
+                    time.sleep(0.1)
+                except OSError:  # pragma: no cover
+                    break
+            else:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:  # pragma: no cover
+                    pass
     except OSError:  # pragma: no cover
         pass
     pid_file(group).unlink(missing_ok=True)
     port_file(group).unlink(missing_ok=True)
     return True
+
+
+def clear_stale_state(group: str = "default") -> dict[str, object]:
+    """Remove pid/port files when process is not running. Does not kill any process."""
+    info: dict[str, object] = {"cleared": False, "port": get_port(group), "had_pid_file": pid_file(group).is_file()}
+    if get_pid(group) is not None:
+        info["cleared"] = False
+        info["running_pid"] = get_pid(group)
+        return info
+    pid_file(group).unlink(missing_ok=True)
+    port_file(group).unlink(missing_ok=True)
+    info["cleared"] = True
+    return info
 
 
 def looks_like_json(text: str) -> bool:
