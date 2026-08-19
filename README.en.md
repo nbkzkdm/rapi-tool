@@ -96,6 +96,20 @@ rapi stop
 On start, PID and port are written to `~/.rapi/rapi.log`.
 
 
+
+## Delayed responses (timeout testing)
+
+```bash
+rapi host /slow get -r '{"ok":true}' --delay 1500
+rapi host /api post -r '{"ok":true}' \
+  --when 'body.id=timeout' --rule-status 200 --rule-response '{"ok":true}' --rule-delay 3000
+```
+
+| Option | Meaning |
+|--------|---------|
+| `--delay MS` | Delay default response (milliseconds) |
+| `--rule-delay MS` | Delay for the matching `--when` (paired by order) |
+
 ## Path + query examples
 
 ### List (query)

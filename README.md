@@ -135,6 +135,29 @@ curl http://127.0.0.1:8000/users/42
 | `--when 'path.id=000'` | 条件にも利用可 |
 
 
+
+## 遅延レスポンス（タイムアウト検証）
+
+```bash
+# デフォルト応答を 1500ms 遅らせる
+rapi host /slow get -r '{"ok":true}' --delay 1500
+
+# 条件にマッチしたときだけ遅延
+rapi host /api post -r '{"ok":true}' \
+  --when 'body.id=timeout' \
+  --rule-status 200 \
+  --rule-response '{"ok":true}' \
+  --rule-delay 3000
+
+rapi start --port 8000
+curl http://127.0.0.1:8000/slow   # 約 1.5 秒後に応答
+```
+
+| オプション | 意味 |
+|-----------|------|
+| `--delay MS` | デフォルトレスポンスの遅延（ミリ秒） |
+| `--rule-delay MS` | 対応する `--when` の遅延（書いた順に対応） |
+
 ## パス + クエリの組み合わせ例
 
 ### 一覧（クエリ）

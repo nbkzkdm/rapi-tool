@@ -9,11 +9,14 @@ class ResponseSpec:
     status: int = 200
     body: str = "OK"
     content_type: str | None = None
+    delay_ms: int = 0  # artificial delay before sending response
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"status": self.status, "body": self.body}
         if self.content_type:
             d["content_type"] = self.content_type
+        if self.delay_ms:
+            d["delay_ms"] = int(self.delay_ms)
         return d
 
     @classmethod
@@ -22,6 +25,7 @@ class ResponseSpec:
             status=int(data.get("status", 200)),
             body=str(data.get("body", "OK")),
             content_type=data.get("content_type"),
+            delay_ms=int(data.get("delay_ms") or 0),
         )
 
 
@@ -32,12 +36,16 @@ class Rule:
     response: ResponseSpec = field(default_factory=ResponseSpec)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "when": self.conditions,
             "status": self.response.status,
             "body": self.response.body,
-            **({"content_type": self.response.content_type} if self.response.content_type else {}),
         }
+        if self.response.content_type:
+            d["content_type"] = self.response.content_type
+        if self.response.delay_ms:
+            d["delay_ms"] = int(self.response.delay_ms)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Rule:
@@ -50,6 +58,7 @@ class Rule:
                 status=int(data.get("status", 200)),
                 body=str(data.get("body", "OK")),
                 content_type=data.get("content_type"),
+                delay_ms=int(data.get("delay_ms") or 0),
             ),
         )
 

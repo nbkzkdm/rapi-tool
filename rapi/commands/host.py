@@ -39,6 +39,8 @@ examples:
     p.add_argument("-r", "--response", default="OK", help="Default response body")
     p.add_argument("-f", "--response-file", help="Default response body from file")
     p.add_argument("-s", "--status", type=int, default=200, help="Default status code")
+    p.add_argument("--delay", type=int, default=0, metavar="MS",
+                   help="Delay default response by MS milliseconds (timeout tests)")
     p.add_argument("-t", "--content-type", default=None, help="Content-Type")
     p.add_argument("-b", "--body", help="Expected request body (exact or ~regex)")
     p.add_argument("--body-file", help="Expected request body from file")
@@ -58,6 +60,8 @@ examples:
                    help="Body for the corresponding --when (order matched)")
     p.add_argument("--rule-response-file", action="append", default=[], dest="rule_response_file",
                    help="Body file for the corresponding --when")
+    p.add_argument("--rule-delay", action="append", default=[], type=int, dest="rule_delay",
+                   help="Delay (ms) for the corresponding --when (order matched)")
     p.add_argument("--list-key", default=None,
                    help="Envelope field path to fill with a generated list (e.g. results)")
     p.add_argument("--list-item", default=None,
@@ -103,7 +107,8 @@ def run(args: argparse.Namespace) -> None:
     if ct is None and _looks_like_json(body):
         ct = "application/json"
 
-    default = ResponseSpec(status=args.status, body=body, content_type=ct)
+    delay_ms = max(0, int(getattr(args, "delay", 0) or 0))
+    default = ResponseSpec(status=args.status, body=body, content_type=ct, delay_ms=delay_ms)
 
     # params
     params: dict[str, str | None] = {}
@@ -127,6 +132,7 @@ def run(args: argparse.Namespace) -> None:
     statuses = args.rule_status or []
     responses = args.rule_response or []
     resp_files = args.rule_response_file or []
+    rule_delays = getattr(args, "rule_delay", None) or []
 
     for i, w in enumerate(whens):
         cond = _parse_when(w)
@@ -136,9 +142,15 @@ def run(args: argparse.Namespace) -> None:
             rfp = Path(resp_files[i])
             if rfp.is_file():
                 rb = rfp.read_text(encoding="utf-8")
+        rd = rule_delays[i] if i < len(rule_delays) else 0
         rules.append(Rule(
             conditions=cond,
-            response=ResponseSpec(status=st, body=rb, content_type="application/json" if _looks_like_json(rb) else None),
+            response=ResponseSpec(
+                status=st,
+                body=rb,
+                content_type="application/json" if _looks_like_json(rb) else None,
+                delay_ms=max(0, int(rd or 0)),
+            ),
         ))
 
     list_item = getattr(args, "list_item", None)
@@ -180,6 +192,8 @@ def run(args: argparse.Namespace) -> None:
     print(f"  group    : {ep.group}")
     print(f"  name     : {ep.name}")
     print(f"  status   : {ep.default.status}")
+    if ep.default.delay_ms:
+        print(f"  delay    : {ep.default.delay_ms} ms")
     prev = ep.default.body if len(ep.default.body) < 60 else ep.default.body[:57] + "..."
     print(f"  response : {prev!r}")
     if ep.rules:

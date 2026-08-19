@@ -305,6 +305,15 @@ class MockHandler(BaseHTTPRequestHandler):
         if ct is None:
             ct = "application/json" if looks_like_json(body_out) else "text/plain; charset=utf-8"
 
+        delay_ms = int(getattr(chosen, "delay_ms", 0) or 0)
+        if delay_ms > 0:
+            print(f"  delay: {delay_ms} ms")
+            try:
+                sys.stdout.flush()
+            except Exception:  # pragma: no cover
+                pass
+            time.sleep(delay_ms / 1000.0)
+
         print(f"← {chosen.status}")
         self._send(chosen.status, body_out.encode("utf-8"), ct)
 
