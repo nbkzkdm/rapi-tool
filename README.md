@@ -67,6 +67,7 @@ rapi stop
 | `rapi stop` | 停止（`--force` で PID に即 SIGKILL） |
 | `rapi restart` | 再起動 |
 | `rapi status` | 起動状態と定義一覧（`-v` で詳細） |
+| `rapi call` | 起動中サーバーへ疎通リクエスト（`--curl` で同等 curl 表示） |
 | `rapi delete` | 定義削除（起動中なら停止） |
 | `rapi save` | 定義を JSON に書き出し |
 | `rapi load` | JSON から定義を読み込み |
@@ -74,6 +75,32 @@ rapi stop
 
 
 
+
+
+## 疎通確認（call）
+
+起動中のモックに、rapi から直接リクエストします。
+
+```bash
+rapi start --port 8000
+
+rapi call /slow get
+rapi call /api post --body '{"id":"001"}'
+rapi call /users/42 get -q 'verbose=1' --curl
+```
+
+| オプション | 意味 |
+|-----------|------|
+| `--group` | 接続先グループ（port は起動状態から取得） |
+| `--port` / `--host` | 直接指定（port 指定時は起動チェックをスキップ） |
+| `-q` / `--query` | クエリ（複数可） |
+| `-b` / `--body` / `--body-file` | ボディ |
+| `-H` | ヘッダー |
+| `--timeout` | 秒（遅延モック用） |
+| `-v` | リクエスト詳細 |
+| `--curl` | 実行後に同等の curl コマンドを表示 |
+
+未起動のときはエラーにし、`rapi start` を案内します（自動起動はしません）。
 
 ## リクエストログ
 
