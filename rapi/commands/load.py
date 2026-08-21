@@ -12,7 +12,13 @@ from rapi.core.store import DefinitionStore
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("load", help="Import definitions from JSON or OpenAPI")
+    p = subparsers.add_parser(
+        'load',
+        help='Import definitions from JSON or OpenAPI',
+        description='Load definitions from a file. Stops running servers that may be affected.\nFormat auto-detected unless --format is set.',
+        epilog='examples:\n  rapi load my.json\n  rapi load openapi.yaml --replace\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("file", help="JSON or OpenAPI (YAML/JSON) file to load")
     p.add_argument(
         "--format",

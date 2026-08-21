@@ -11,7 +11,13 @@ from rapi.core.store import DefinitionStore
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("save", help="Export definitions to JSON or OpenAPI")
+    p = subparsers.add_parser(
+        'save',
+        help='Export definitions to JSON or OpenAPI',
+        description='Write current definitions to a file (JSON or OpenAPI 3 YAML/JSON).',
+        epilog='examples:\n  rapi save my.json\n  rapi save openapi.yaml --format openapi\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument(
         "file",
         nargs="?",

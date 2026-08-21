@@ -8,7 +8,13 @@ from rapi.core.server import run_server
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("start", help="Start mock server (background)")
+    p = subparsers.add_parser(
+        'start',
+        help='Start mock server in the background',
+        description='Start the HTTP mock server for a definition group.\nLoads endpoints for --group and listens on --host/--port.',
+        epilog='examples:\n  rapi start --port 8000\n  rapi start --group api-a --port 8001\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("--host", default="127.0.0.1", help="Bind address")
     p.add_argument("--port", type=int, default=8000, help="Port")
     p.add_argument("-f", "--foreground", action="store_true", help="Run in foreground")

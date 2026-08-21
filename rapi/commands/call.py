@@ -18,8 +18,11 @@ from rapi.core.server import get_pid, get_port
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
-        "call",
-        help="Call a running mock endpoint (connectivity check)",
+        'call',
+        help='Call a running mock (connectivity check; --curl for curl sample)',
+        description='Send an HTTP request to a running rapi server.\nIf --port is omitted, uses the port of the running --group.',
+        epilog='examples:\n  rapi call /sample get\n  rapi call /api post --body \'{"id":"001"}\' --curl\n  rapi call /slow get --timeout 10\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("path", help="Request path (e.g. /slow or /users/42)")
     p.add_argument("method", help="HTTP method (get, post, ...)")

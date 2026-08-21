@@ -23,16 +23,11 @@ def _looks_like_json(text: str) -> bool:
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
-        "host",
-        help="Define (register) a mock REST endpoint",
+        'host',
+        help='Register a REST mock definition (path + method + response)',
+        description="Register (or replace) a mock endpoint definition.\nPort is NOT set here — use 'rapi start --port' when listening.\nOptional: --group, query/body validation, rules, list generation, delay.",
+        epilog='examples:\n  rapi host /sample get -r \'{"ok":true}\'\n  rapi host \'/users/{id}\' get -r \'{"id":"{INPUT.path.id}"}\'\n  rapi host /slow get -r \'{"ok":true}\' --delay 1500\n',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-examples:
-  rapi host /sample get -r '{"ok":true}'
-  rapi host /sample post -r '{"id":"{INPUT.body.id}"}' \\
-    --when 'body.id=004' --status 400 --response '{"error":"invalid","id":"{INPUT.body.id}"}'
-  rapi host /search query -r '{"results":[]}' --body '~"filter"'
-        """,
     )
     p.add_argument("path", help="Endpoint path (e.g. sample or /api/users)")
     p.add_argument("method", help="HTTP method (get, post, put, delete, patch, query, ...)")

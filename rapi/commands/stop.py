@@ -8,7 +8,13 @@ from rapi.core.server import clear_stale_state, get_pid, get_port, stop_server
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("stop", help="Stop mock server")
+    p = subparsers.add_parser(
+        'stop',
+        help='Stop mock server (optional --force SIGKILL)',
+        description='Stop the background server for a group.\nWithout a recorded PID, does not kill by port; shows manual check commands.',
+        epilog='examples:\n  rapi stop\n  rapi stop --group api-a --force\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("--group", default="default", help="Group to stop (default: default)")
     p.add_argument(
         "--force",

@@ -10,7 +10,13 @@ from rapi.core.store import DefinitionStore
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("status", help="Show server status and definitions")
+    p = subparsers.add_parser(
+        'status',
+        help='Show server status and definitions (-v for detail)',
+        description='Show running state per group, store path, and registered endpoints.\nUse -v/--verbose for response bodies and list settings.',
+        epilog='examples:\n  rapi status\n  rapi status -v\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument(
         "--group",
         default=None,

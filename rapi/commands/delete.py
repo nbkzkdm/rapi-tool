@@ -9,7 +9,13 @@ from rapi.core.store import DefinitionStore
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("delete", help="Delete a definition (stops server if running)")
+    p = subparsers.add_parser(
+        'delete',
+        help='Delete a definition (stops server if running)',
+        description='Delete endpoint definition(s). Stops the group server if it is running.',
+        epilog='examples:\n  rapi delete /sample\n  rapi delete --all\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     p.add_argument("name", nargs="?", default=None,
                    help="Definition name or path (omit with --all to clear)")
     p.add_argument("--all", action="store_true", help="Delete all definitions in the group")

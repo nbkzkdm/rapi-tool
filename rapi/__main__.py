@@ -11,10 +11,31 @@ from rapi.commands import load_commands
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="rapi",
-        description="HTTP mock / request simulator for testing",
+        description=(
+            "rapi — REST API mock server for testing.\n\n"
+            "Define endpoints with 'host', start the server with 'start', "
+            "then call them with curl or 'rapi call'."
+        ),
+        epilog=(
+            "examples:\n"
+            "  rapi host /sample get -r '{\"ok\":true}'\n"
+            "  rapi start --port 8000\n"
+            "  rapi call /sample get\n"
+            "  rapi status\n"
+            "  rapi stop\n"
+            "\n"
+            "Use 'rapi <command> --help' for options of each subcommand."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version="rapi 0.2.0")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(
+        dest="command",
+        required=True,
+        title="subcommands",
+        metavar="<command>",
+        help="Available commands (see below)",
+    )
 
     load_commands(sub)
 
