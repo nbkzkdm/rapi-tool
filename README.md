@@ -575,7 +575,30 @@ rapi load openapi.yaml
 rapi load openapi.yaml --format openapi --replace
 ```
 
-- 標準の `paths` / `responses` / `example` を利用
+- 標準の `paths` / `responses` / `example` / `examples` を利用
+- `parameters`（path レベル + operation、query は rapi の必須クエリに）
+- `#/components/...` のローカル `$ref`（schema / parameter / requestBody）
+- `schema` から簡易 example を生成（example が無いとき）
+- `requestBody.required` + example → `expected_body`（ボディ検証）
+- 複数 `responses` → `query.force=<status>` の rule を自動付与
+
+OpenAPI の `responses` に 200 以外の status がある場合、load 時に次の **rapi 規約**で rule を自動付与します。
+
+| responses | 付与される when |
+|-----------|-----------------|
+| `"400"` | `query.force=400` |
+| `"404"` | `query.force=404` |
+| その他 | `query.force=<status>` |
+
+```bash
+rapi load examples/sample-openapi.yaml --replace
+rapi start --port 8000
+rapi call '/items/1' get -q verbose=1              # 200
+rapi call '/items/1' get -q verbose=1 -q force=404 # 404 example
+```
+
+YAML に `force` パラメータが無くても付与されます（モック検証用）。
+
 - rapi 独自の条件・一覧などは `x-rapi-*` 拡張に保持（再読込で復元）
 - OpenAPI 利用時は **PyYAML** が必要（`install.sh` または `pip install -r requirements.txt`）
 
@@ -626,3 +649,13 @@ python3 -m pytest tests/ -q --cov=rapi --cov-report=term-missing
 ## ライセンス
 
 MIT License（詳細は `LICENSE` を参照）
+
+
+### 取り込みサンプル
+
+`examples/sample-openapi.yaml` と `examples/sample-openapi.json` を同梱しています。
+
+```bash
+rapi load examples/sample-openapi.yaml --format openapi --replace
+rapi status
+```

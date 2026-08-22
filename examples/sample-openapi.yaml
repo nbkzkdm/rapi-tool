@@ -1,0 +1,147 @@
+openapi: 3.0.3
+info:
+  title: rapi sample API
+  version: 1.0.0
+  description: OpenAPI sample for rapi load (import practice)
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example:
+                status: ok
+
+  /items:
+    get:
+      operationId: listItems
+      summary: List items
+      parameters:
+        - name: limit
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [full, brief]
+      responses:
+        "200":
+          description: item list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemList"
+
+    post:
+      operationId: createItem
+      summary: Create item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              name: sample
+              qty: 1
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              example:
+                id: "001"
+                name: sample
+        "400":
+          description: bad request
+          content:
+            application/json:
+              example:
+                error: invalid
+
+  /items/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: verbose
+        in: query
+        required: true
+        schema:
+          type: string
+          enum: ["0", "1"]
+    get:
+      operationId: getItem
+      summary: Get one item
+      parameters:
+        - name: verbose
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["1"]
+      responses:
+        "200":
+          description: item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "404":
+          description: not found
+          content:
+            text/plain:
+              example: not found
+
+  /echo:
+    post:
+      operationId: echo
+      summary: Echo body (text)
+      requestBody:
+        required: false
+        content:
+          text/plain:
+            example: hello
+      responses:
+        "200":
+          description: echo
+          content:
+            text/plain:
+              example: hello
+
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "001"
+        name:
+          type: string
+          example: widget
+        active:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+            example: tag-a
+    ItemList:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Item"
+        total:
+          type: integer
+          default: 0

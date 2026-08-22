@@ -120,6 +120,105 @@ def _response_object(spec: ResponseSpec) -> dict[str, Any]:
     }
 
 
+def _resolve_ref(doc: dict[str, Any], obj: Any, _seen: set[str] | None = None) -> Any:
+    """Resolve local $ref like #/components/schemas/Pet (shallow, cycle-safe)."""
+    if not isinstance(obj, dict):
+        return obj
+    ref = obj.get("$ref")
+    if not isinstance(ref, str) or not ref.startswith("#/"):
+        return obj
+    if _seen is None:
+        _seen = set()
+    if ref in _seen:
+        return obj
+    _seen.add(ref)
+    cur: Any = doc
+    for part in ref[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(cur, dict) or part not in cur:
+            return obj
+        cur = cur[part]
+    if isinstance(cur, dict) and "$ref" in cur:
+        return _resolve_ref(doc, cur, _seen)
+    return cur
+
+
+def _merge_parameters(doc: dict[str, Any], path_item: dict[str, Any], op: dict[str, Any]) -> list[dict[str, Any]]:
+    """Path-level + operation-level parameters (operation overrides same name+in)."""
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for src in (path_item.get("parameters") or [], op.get("parameters") or []):
+        for p in src:
+            if not isinstance(p, dict):
+                continue
+            p = _resolve_ref(doc, p)
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name")
+            loc = p.get("in") or "query"
+            if not name:
+                continue
+            merged[(str(name), str(loc))] = p
+    return list(merged.values())
+
+
+def _example_from_schema(schema: Any) -> Any:
+    if not isinstance(schema, dict):
+        return None
+    if "example" in schema:
+        return schema["example"]
+    if "default" in schema:
+        return schema["default"]
+    # minimal synthetic example from type
+    t = schema.get("type")
+    if t == "object":
+        props = schema.get("properties") or {}
+        return {k: _example_from_schema(v) if isinstance(v, dict) else None for k, v in list(props.items())[:20]}
+    if t == "array":
+        item = _example_from_schema(schema.get("items") or {})
+        return [item] if item is not None else []
+    if t == "integer" or t == "number":
+        return 0
+    if t == "boolean":
+        return False
+    if t == "string":
+        return schema.get("enum", ["string"])[0] if schema.get("enum") else "string"
+    return None
+
+
+def _extract_request_body_example(doc: dict[str, Any], op: dict[str, Any]) -> Any | None:
+    rb = op.get("requestBody")
+    if not isinstance(rb, dict):
+        return None
+    rb = _resolve_ref(doc, rb)
+    if not isinstance(rb, dict):
+        return None
+    content = rb.get("content") or {}
+    if not isinstance(content, dict) or not content:
+        return None
+    # prefer application/json
+    blocks = []
+    if "application/json" in content:
+        blocks.append(content["application/json"])
+    blocks.extend(content[k] for k in content if k != "application/json")
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        if "example" in block:
+            return block["example"]
+        if block.get("examples"):
+            first = next(iter(block["examples"].values()), {})
+            if isinstance(first, dict) and "value" in first:
+                return first["value"]
+            return first
+        schema = block.get("schema")
+        if schema is not None:
+            schema = _resolve_ref(doc, schema)
+            ex = _example_from_schema(schema)
+            if ex is not None:
+                return ex
+    return None
+
+
 def openapi_to_endpoints(doc: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert OpenAPI document to list of endpoint dicts for DefinitionStore.import_from."""
     paths = doc.get("paths") or {}
@@ -144,21 +243,24 @@ def openapi_to_endpoints(doc: dict[str, Any]) -> list[dict[str, Any]]:
             default_ct = None
             responses = op.get("responses") or {}
 
-            # prefer 200, else first numeric status
-            status_keys = sorted(
-                responses.keys(),
-                key=lambda s: (0 if str(s) == "200" else 1, str(s)),
-            )
-            for sk in status_keys:
+            # Collect numeric response statuses with examples
+            numeric_responses: list[tuple[int, str, Any, str | None]] = []
+            for sk, resp in responses.items():
                 try:
                     code = int(str(sk))
                 except ValueError:
                     continue
-                default_status = code
-                default_body, default_ct = _extract_example(responses[sk])
-                break
+                body, ct = _extract_example(doc, resp)
+                body_s = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
+                numeric_responses.append((code, str(sk), body_s, ct))
+
+            # prefer 200, else first by status code
+            numeric_responses.sort(key=lambda x: (0 if x[0] == 200 else 1, x[0]))
+            if numeric_responses:
+                default_status, _, default_body, default_ct = numeric_responses[0]
 
             rules = []
+            # Explicit x-rapi-rules first (higher priority: first-match wins)
             for raw in op.get("x-rapi-rules") or []:
                 if not isinstance(raw, dict):
                     continue
@@ -169,21 +271,44 @@ def openapi_to_endpoints(doc: dict[str, Any]) -> list[dict[str, Any]]:
                     **({"content_type": raw["content_type"]} if raw.get("content_type") else {}),
                 })
 
+            # Auto rules: other statuses → query.force=<status>
+            # (OpenAPI has no "when"; rapi convention for trying error examples)
+            for code, _sk, body_s, ct in numeric_responses:
+                if code == default_status:
+                    continue
+                rule: dict[str, Any] = {
+                    "when": {"query.force": str(code)},
+                    "status": code,
+                    "body": body_s,
+                }
+                if ct:
+                    rule["content_type"] = ct
+                rules.append(rule)
+
             params: dict[str, str | None] = {}
-            for p in op.get("parameters") or []:
-                if not isinstance(p, dict) or p.get("in") != "query":
+            for p in _merge_parameters(doc, path_item, op):
+                if p.get("in") != "query":
                     continue
                 name = p.get("name")
                 if not name:
+                    continue
+                # Import all query parameters as rapi required checks (mock-friendly).
+                # Optional OpenAPI query params still become "must be present" for mocks;
+                # skip only when explicitly x-rapi-ignore.
+                if p.get("x-rapi-ignore"):
                     continue
                 desc = p.get("description") or ""
                 if desc.startswith("rapi expected: "):
                     params[str(name)] = desc[len("rapi expected: "):]
                 else:
                     schema = p.get("schema") or {}
-                    enum = schema.get("enum")
-                    if enum:
-                        params[str(name)] = str(enum[0])
+                    schema = _resolve_ref(doc, schema) if isinstance(schema, dict) else schema
+                    if isinstance(schema, dict):
+                        enum = schema.get("enum")
+                        if enum:
+                            params[str(name)] = str(enum[0])
+                        else:
+                            params[str(name)] = None
                     else:
                         params[str(name)] = None
 
@@ -204,6 +329,18 @@ def openapi_to_endpoints(doc: dict[str, Any]) -> list[dict[str, Any]]:
                 ep["strict_params"] = True
             if op.get("x-rapi-expected-body") is not None:
                 ep["expected_body"] = op["x-rapi-expected-body"]
+            else:
+                # From standard OpenAPI requestBody example (not as strict validation by default)
+                # Store only when requestBody.required so mock can optional-validate
+                rb = op.get("requestBody")
+                if isinstance(rb, dict):
+                    rb_res = _resolve_ref(doc, rb)
+                    if isinstance(rb_res, dict) and rb_res.get("required"):
+                        ex = _extract_request_body_example(doc, op)
+                        if ex is not None:
+                            ep["expected_body"] = (
+                                ex if isinstance(ex, str) else json.dumps(ex, ensure_ascii=False)
+                            )
             if op.get("x-rapi-list"):
                 lst = op["x-rapi-list"]
                 ep["list_key"] = lst.get("key")
@@ -215,7 +352,10 @@ def openapi_to_endpoints(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def _extract_example(resp_obj: Any) -> tuple[Any, str | None]:
+def _extract_example(doc: dict[str, Any], resp_obj: Any) -> tuple[Any, str | None]:
+    if not isinstance(resp_obj, dict):
+        return "OK", None
+    resp_obj = _resolve_ref(doc, resp_obj)
     if not isinstance(resp_obj, dict):
         return "OK", None
     content = resp_obj.get("content") or {}
@@ -227,14 +367,25 @@ def _extract_example(resp_obj: Any) -> tuple[Any, str | None]:
         ex = block.get("example")
         if ex is None and block.get("examples"):
             first = next(iter(block["examples"].values()), {})
+            first = _resolve_ref(doc, first) if isinstance(first, dict) else first
             ex = first.get("value") if isinstance(first, dict) else first
+        if ex is None and block.get("schema"):
+            schema = _resolve_ref(doc, block["schema"])
+            ex = _example_from_schema(schema)
         if ex is None:
             return "{}", "application/json"
         return ex, "application/json"
     # any first content type
     ct = next(iter(content.keys()))
     block = content[ct] or {}
-    ex = block.get("example", "OK")
+    if not isinstance(block, dict):
+        return "OK", ct
+    ex = block.get("example")
+    if ex is None and block.get("schema"):
+        schema = _resolve_ref(doc, block["schema"])
+        ex = _example_from_schema(schema)
+    if ex is None:
+        ex = "OK"
     return ex, ct
 
 

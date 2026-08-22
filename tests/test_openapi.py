@@ -204,11 +204,11 @@ def test_openapi_to_endpoints_edge_cases():
 
 def test_extract_example_variants():
     from rapi.core.openapi import _extract_example
-    assert _extract_example("x") == ("OK", None)
-    assert _extract_example({"description": "only"}) == ("only", None)
-    assert _extract_example({"content": {}})[0] in ("OK", "only") or True
+    assert _extract_example({}, "x") == ("OK", None)
+    assert _extract_example({}, {"description": "only"}) == ("only", None)
+    assert _extract_example({}, {"content": {}})[0] in ("OK", "only") or True
     # examples map
-    body, ct = _extract_example({
+    body, ct = _extract_example({}, {
         "content": {
             "application/json": {
                 "examples": {"a": {"value": {"k": 1}}},
@@ -218,10 +218,10 @@ def test_extract_example_variants():
     assert body == {"k": 1}
     assert ct == "application/json"
     # json with no example
-    body, ct = _extract_example({"content": {"application/json": {}}})
+    body, ct = _extract_example({}, {"content": {"application/json": {}}})
     assert body == "{}"
     # non-json content type
-    body, ct = _extract_example({
+    body, ct = _extract_example({}, {
         "content": {"text/plain": {"example": "hello"}}
     })
     assert body == "hello"
@@ -340,3 +340,332 @@ def test_only_non_numeric_response_keys():
     # stays at defaults when no numeric status
     assert items[0]["default"]["status"] == 200
     assert items[0]["default"]["body"] == "OK"
+
+
+def test_ref_schema_example_and_path_params():
+    doc = {
+        "openapi": "3.0.3",
+        "components": {
+            "schemas": {
+                "Item": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "example": "i-1"},
+                        "n": {"type": "integer"},
+                    },
+                }
+            }
+        },
+        "paths": {
+            "/items/{id}": {
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {"name": "q", "in": "query", "required": True, "schema": {"type": "string"}},
+                ],
+                "get": {
+                    "parameters": [
+                        {"name": "q", "in": "query", "required": True, "schema": {"enum": ["a", "b"]}},
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {"$ref": "#/components/schemas/Item"},
+                                }
+                            },
+                        }
+                    },
+                },
+            }
+        },
+    }
+    items = openapi_to_endpoints(doc)
+    assert len(items) == 1
+    ep = items[0]
+    assert ep["path"] == "/items/{id}"
+    assert ep["params"]["q"] == "a"  # enum from operation-level override
+    body = ep["default"]["body"]
+    assert "i-1" in body or "id" in body
+
+
+def test_request_body_required_example():
+    doc = {
+        "paths": {
+            "/p": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {"example": {"name": "taro"}},
+                        },
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        }
+    }
+    items = openapi_to_endpoints(doc)
+    assert "expected_body" in items[0]
+    assert "taro" in items[0]["expected_body"]
+
+
+def test_resolve_ref_edge_cases():
+    from rapi.core.openapi import _resolve_ref
+
+    # non-dict
+    assert _resolve_ref({}, "x") == "x"
+    # no $ref / external-ish
+    assert _resolve_ref({}, {"$ref": "https://example.com/x"}) == {"$ref": "https://example.com/x"}
+    # missing path in doc
+    assert _resolve_ref({"a": 1}, {"$ref": "#/components/missing"}) == {"$ref": "#/components/missing"}
+    # cycle
+    doc = {"components": {"schemas": {"A": {"$ref": "#/components/schemas/A"}}}}
+    out = _resolve_ref(doc, {"$ref": "#/components/schemas/A"})
+    assert isinstance(out, dict) and "$ref" in out
+    # chained ref
+    doc2 = {
+        "components": {
+            "schemas": {
+                "A": {"$ref": "#/components/schemas/B"},
+                "B": {"type": "string", "example": "hi"},
+            }
+        }
+    }
+    assert _resolve_ref(doc2, {"$ref": "#/components/schemas/A"})["example"] == "hi"
+    # tilde escape
+    doc3 = {"a/b": {"ok": True}}
+    assert _resolve_ref(doc3, {"$ref": "#/a~1b"})["ok"] is True
+
+
+def test_merge_parameters_skips_non_dict_and_ref_to_non_dict():
+    from rapi.core.openapi import _merge_parameters
+
+    doc = {"components": {"parameters": {"Bad": "not-a-dict"}}}
+    path_item = {
+        "parameters": [
+            "skip-me",
+            {"$ref": "#/components/parameters/Bad"},
+            {"name": "q", "in": "query", "required": True, "schema": {"type": "string"}},
+            {"in": "query"},  # no name
+        ]
+    }
+    merged = _merge_parameters(doc, path_item, {})
+    assert any(p.get("name") == "q" for p in merged)
+
+
+def test_example_from_schema_all_types():
+    from rapi.core.openapi import _example_from_schema
+
+    assert _example_from_schema("x") is None
+    assert _example_from_schema({"default": 9}) == 9
+    assert _example_from_schema({"type": "integer"}) == 0
+    assert _example_from_schema({"type": "number"}) == 0
+    assert _example_from_schema({"type": "boolean"}) is False
+    assert _example_from_schema({"type": "string"}) == "string"
+    assert _example_from_schema({"type": "string", "enum": ["a", "b"]}) == "a"
+    assert _example_from_schema({"type": "array", "items": {"type": "boolean"}}) == [False]
+    assert _example_from_schema({"type": "array", "items": {}}) == []
+    assert _example_from_schema({"type": "object", "properties": {"k": {"type": "string"}}}) == {"k": "string"}
+    assert _example_from_schema({"type": "null"}) is None  # unknown type
+
+
+def test_extract_request_body_example_branches():
+    from rapi.core.openapi import _extract_request_body_example
+
+    assert _extract_request_body_example({}, {}) is None
+    assert _extract_request_body_example({}, {"requestBody": "x"}) is None
+
+    # ref resolves to non-dict content empty
+    doc = {"components": {"requestBodies": {"Empty": {"content": {}}}}}
+    assert _extract_request_body_example(
+        doc, {"requestBody": {"$ref": "#/components/requestBodies/Empty"}}
+    ) is None
+
+    # non-dict block skipped, then examples without value, then schema
+    op = {
+        "requestBody": {
+            "content": {
+                "application/json": "bad",
+                "text/plain": {
+                    "examples": {"a": "plain-text-example"},
+                },
+            }
+        }
+    }
+    assert _extract_request_body_example({}, op) == "plain-text-example"
+
+    op2 = {
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "examples": {"a": {"value": {"n": 1}}},
+                }
+            }
+        }
+    }
+    assert _extract_request_body_example({}, op2) == {"n": 1}
+
+    op3 = {
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "schema": {"type": "boolean"},
+                }
+            }
+        }
+    }
+    assert _extract_request_body_example({}, op3) is False
+
+    # all blocks yield nothing
+    op4 = {
+        "requestBody": {
+            "content": {
+                "application/json": {},
+            }
+        }
+    }
+    assert _extract_request_body_example({}, op4) is None
+
+
+def test_openapi_param_ignore_and_non_dict_schema():
+    doc = {
+        "paths": {
+            "/x": {
+                "get": {
+                    "parameters": [
+                        {"name": "", "in": "query"},  # empty name after merge still skipped if no name
+                        {"name": "skip", "in": "query", "x-rapi-ignore": True},
+                        {"name": "ok", "in": "query", "schema": "not-a-dict"},
+                    ],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        }
+    }
+    items = openapi_to_endpoints(doc)
+    assert items[0].get("params", {}).get("ok") is None
+    assert "skip" not in items[0].get("params", {})
+
+
+def test_extract_example_non_json_and_schema():
+    from rapi.core.openapi import _extract_example
+
+    # response $ref resolves to non-dict
+    doc = {"components": {"responses": {"R": "oops"}}
+    }
+    assert _extract_example(doc, {"$ref": "#/components/responses/R"}) == ("OK", None)
+
+    # non-json content, block not dict
+    body, ct = _extract_example({}, {"content": {"text/plain": "raw"}})
+    assert body == "OK"
+    assert ct == "text/plain"
+
+    # non-json with schema only
+    body, ct = _extract_example(
+        {},
+        {"content": {"text/plain": {"schema": {"type": "string", "example": "hi"}}}},
+    )
+    assert body == "hi"
+    assert ct == "text/plain"
+
+    # non-json no example no schema
+    body, ct = _extract_example({}, {"content": {"text/plain": {}}})
+    assert body == "OK"
+
+
+def test_load_sample_openapi_files():
+    root = Path(__file__).resolve().parents[1] / "examples"
+    yaml_path = root / "sample-openapi.yaml"
+    json_path = root / "sample-openapi.json"
+    if yaml_path.is_file():
+        items = load_openapi(str(yaml_path))
+        assert len(items) >= 4
+        paths = {i["path"] for i in items}
+        assert "/items" in paths
+        assert "/items/{id}" in paths
+    if json_path.is_file():
+        items = load_openapi(str(json_path))
+        assert any(i["path"] == "/ping" for i in items)
+
+
+def test_x_rapi_rules_non_dict_skipped():
+    doc = {
+        "paths": {
+            "/r": {
+                "get": {
+                    "x-rapi-rules": ["bad", {"when": {"body.id": "1"}, "status": 400, "body": "e"}],
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        }
+    }
+    items = openapi_to_endpoints(doc)
+    assert len(items[0]["rules"]) == 1
+
+
+def test_request_body_ref_to_non_dict():
+    from rapi.core.openapi import _extract_request_body_example
+    doc = {"components": {"requestBodies": {"X": "not-a-mapping"}}}
+    assert _extract_request_body_example(
+        doc, {"requestBody": {"$ref": "#/components/requestBodies/X"}}
+    ) is None
+
+
+def test_param_empty_name_defensive(monkeypatch):
+    """Line that skips empty name even if merge returned one."""
+    from rapi.core import openapi as oa
+
+    def fake_merge(doc, path_item, op):
+        return [{"name": "", "in": "query"}, {"name": None, "in": "query"}]
+
+    monkeypatch.setattr(oa, "_merge_parameters", fake_merge)
+    items = oa.openapi_to_endpoints({
+        "paths": {"/z": {"get": {"responses": {"200": {"description": "ok"}}}}}
+    })
+    assert "params" not in items[0] or items[0].get("params") == {}
+
+
+def test_auto_force_rules_from_multiple_responses():
+    doc = {
+        "paths": {
+            "/items/{id}": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {"example": {"id": "{INPUT.path.id}"}}
+                            },
+                        },
+                        "404": {
+                            "description": "missing",
+                            "content": {
+                                "application/json": {
+                                    "example": {
+                                        "error": "not found",
+                                        "id": "{INPUT.path.id}",
+                                    }
+                                }
+                            },
+                        },
+                        "400": {
+                            "description": "bad",
+                            "content": {
+                                "application/json": {"example": {"error": "bad request"}}
+                            },
+                        },
+                    }
+                }
+            }
+        }
+    }
+    items = openapi_to_endpoints(doc)
+    ep = items[0]
+    assert ep["default"]["status"] == 200
+    rules = ep["rules"]
+    by_status = {r["status"]: r for r in rules}
+    assert 400 in by_status and 404 in by_status
+    assert by_status[400]["when"] == {"query.force": "400"}
+    assert by_status[404]["when"] == {"query.force": "404"}
+    assert "not found" in by_status[404]["body"]
