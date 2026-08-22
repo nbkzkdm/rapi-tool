@@ -8,12 +8,6 @@ Clients call it like a normal HTTP API (GET / POST / QUERY, etc.).
 
 [日本語](README.md)
 
-
-> **Direction**  
-> For now, the primary path is the CLI (`host` → `start`) so you can spin up local test mocks quickly.  
-> Future work will gradually make **OpenAPI a first-class input path** as well (starting with examples and basic path/method/parameters).  
-> rapi-specific features (conditional rules, list generation, etc.) remain available via CLI options and `x-rapi-*` extensions — a two-layer model.
-
 ## Features
 
 - Mock REST endpoints (path + method)
