@@ -16,6 +16,10 @@ Clients call it like a normal HTTP API (GET / POST / QUERY, etc.).
 - Conditional responses (e.g. return 400 only for a specific ID)
 - Embed request values into responses (`{INPUT.body.id}`)
 - Background start / stop / status
+- Path parameters (`/users/{id}`)
+- Per-group processes (`--group`)
+- OpenAPI 3 load / save
+- Connectivity check via `rapi call`
 
 ## Install
 
@@ -55,14 +59,109 @@ rapi stop
 
 | Command | Description |
 |---------|-------------|
-| `rapi host` | Register a REST definition (no port here) |
-| `rapi start` | Start the server (`--port`, default 8000) |
-| `rapi stop` | Stop the server |
-| `rapi restart` | Restart the server |
-| `rapi status` | Show running state and definitions |
-| `rapi delete` | Delete a definition (stops server if running) |
-| `rapi save` | Export definitions to JSON |
-| `rapi load` | Import definitions from JSON |
+| `rapi host` | Register a REST definition (no port; `--group`, default `default`) |
+| `rapi start` | Start the server (`--port` / `--group`; one process per group) |
+| `rapi stop` | Stop (`--force` sends SIGKILL to the recorded PID) |
+| `rapi restart` | Restart |
+| `rapi status` | Running state and definitions (`-v` for detail) |
+| `rapi call` | Request a running server (`--curl` prints an equivalent curl) |
+| `rapi delete` | Delete a definition (stops the server if running) |
+| `rapi save` | Export definitions to JSON or OpenAPI |
+| `rapi load` | Import definitions from JSON or OpenAPI |
+
+## Connectivity check (`call`)
+
+Send a request from rapi to a running mock.
+
+```bash
+rapi start --port 8000
+
+rapi call /slow get
+rapi call /api post --body '{"id":"001"}'
+rapi call /users/42 get -q 'verbose=1' --curl
+```
+
+| Option | Meaning |
+|--------|---------|
+| `--group` | Target group (port is taken from the running process) |
+| `--port` / `--host` | Direct address (skips the running-process check if `--port` is set) |
+| `-q` / `--query` | Query parameter (repeatable) |
+| `-b` / `--body` / `--body-file` | Body |
+| `-H` | Header |
+| `--timeout` | Seconds (for delayed mocks) |
+| `-v` | Show request details |
+| `--curl` | After the call, print an equivalent curl command |
+
+If the server is not running and `--port` is omitted, rapi exits with an error and suggests `rapi start` (it does not start automatically).
+
+## Request log
+
+When started in the background, requests are written to the group log.
+
+```bash
+tail -f ~/.rapi/groups/default/rapi.log
+```
+
+Example:
+
+```text
+[2026-08-19 21:00:00] REQ  GET /slow?x=1
+         status=200  duration=1503ms  endpoint=GET:/slow
+         query={'x': '1'}
+```
+
+| Field | Meaning |
+|-------|---------|
+| REQ | Method and path (including query) |
+| status / duration | Status code and elapsed time (includes `--delay`) |
+| endpoint | Matched definition name |
+| path_params / query / body | Request data (long bodies are truncated) |
+
+## Server status (`status`)
+
+```bash
+rapi status
+rapi status --group default
+rapi status -v                 # params / response bodies, etc.
+```
+
+- **Server** — running / pid / listen / log per group
+- **Store** — definition file path and counts
+- **Definitions** — method / path / status / delay / rules / query
+
+## Stopping the server
+
+```bash
+rapi stop --group default
+rapi stop --group default --force   # SIGKILL the recorded PID immediately
+```
+
+If no live PID is recorded, **no process is killed**. Stale pid/port files are removed and check commands are printed:
+
+```bash
+ss -ltnp | grep 8000
+lsof -i :8000
+# kill <PID>   or   kill -9 <PID>
+```
+
+rapi never kills an unknown process by port number alone.
+
+## Groups (`--group`)
+
+Split definitions and processes by name. Omitted group is `default`.
+
+```bash
+rapi host /a get -r '{"ok":true}' --group api-a
+rapi host /b get -r '{"ok":true}' --group api-b
+
+rapi start --group api-a --port 8001
+rapi start --group api-b --port 8002
+
+rapi status
+rapi stop --group api-a
+```
+
+State files live under `~/.rapi/groups/<group>/` (pid / port / log).
 
 ## Basic flow
 
@@ -87,9 +186,24 @@ rapi status
 rapi stop
 ```
 
-On start, PID and port are written to `~/.rapi/rapi.log`.
+On start, PID and port are written to `~/.rapi/groups/<group>/rapi.log`.
 
+## Path parameters
 
+Define paths with `{name}` templates.
+
+```bash
+rapi host '/users/{id}' get -r '{"id":"{INPUT.path.id}"}'
+rapi start --port 8000
+curl http://127.0.0.1:8000/users/42
+# → {"id":"42"}
+```
+
+| Syntax | Meaning |
+|--------|---------|
+| `{INPUT.path}` | Full request path (`/users/42`) |
+| `{INPUT.path.id}` | Path parameter `id` |
+| `--when 'path.id=000'` | Usable in conditions too |
 
 ## Delayed responses (timeout testing)
 
@@ -391,19 +505,48 @@ rapi start
 rapi save openapi.yaml --format openapi
 # standard OpenAPI only (no x-rapi-*)
 rapi save openapi.yaml --format openapi --no-x-rapi
+
 rapi load openapi.yaml
 rapi load openapi.yaml --format openapi --replace
 ```
 
-- Uses standard `paths` / `responses` / `example`
-- rapi-specific rules/lists are kept in `x-rapi-*` extensions
-- Requires **PyYAML** (`install.sh` or `pip install -r requirements.txt`)
+- Uses standard `paths` / `responses` / `example` / `examples`
+- `parameters` (path-level + operation; query params become rapi required query checks)
+- Local `$ref` under `#/components/...` (schema / parameter / requestBody)
+- Builds a simple example from `schema` when no example is present
+- `requestBody.required` + example → `expected_body` (body validation)
+- Extra `responses` statuses → rules with `query.force=<status>`
+
+When OpenAPI `responses` include statuses other than 200, load attaches **rapi convention** rules:
+
+| responses | when |
+|-----------|------|
+| `"400"` | `query.force=400` |
+| `"404"` | `query.force=404` |
+| other | `query.force=<status>` |
+
+```bash
+rapi load examples/sample-openapi.yaml --replace
+rapi start --port 8000
+rapi call '/items/1' get -q verbose=1              # 200
+rapi call '/items/1' get -q verbose=1 -q force=404 # 404 example
+```
+
+`force` is added even if the YAML does not declare that query parameter (for mock testing).
+
+- rapi-specific rules / lists are stored in `x-rapi-*` and restored on reload
+- OpenAPI support needs **PyYAML** (`install.sh` or `pip install -r requirements.txt`)
+
+Sample files: `examples/sample-openapi.yaml` and `examples/sample-openapi.json`.
 
 ## Save / load definitions
 
 ```bash
 rapi save my-mocks.json
+rapi save openapi.yaml --format openapi
+rapi save openapi.yaml --format openapi --no-x-rapi
 rapi load my-mocks.json
+rapi load openapi.yaml --format openapi
 rapi load my-mocks.json --replace
 ```
 
@@ -426,9 +569,9 @@ def run(args):
 | Path | Contents |
 |------|----------|
 | `~/.rapi/definitions.json` | Definitions |
-| `~/.rapi/rapi.pid` | PID |
-| `~/.rapi/rapi.port` | Listening port |
-| `~/.rapi/rapi.log` | Log (records pid / port on start) |
+| `~/.rapi/groups/<group>/rapi.pid` | PID |
+| `~/.rapi/groups/<group>/rapi.port` | Listening port |
+| `~/.rapi/groups/<group>/rapi.log` | Log (records pid / port on start) |
 
 ## Tests
 
