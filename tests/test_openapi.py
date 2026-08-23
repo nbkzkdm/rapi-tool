@@ -669,3 +669,29 @@ def test_auto_force_rules_from_multiple_responses():
     assert by_status[400]["when"] == {"query.force": "400"}
     assert by_status[404]["when"] == {"query.force": "404"}
     assert "not found" in by_status[404]["body"]
+
+
+def test_openapi_x_rapi_list_date_roundtrip():
+    from rapi.core.models import Endpoint, ResponseSpec
+    from rapi.core.openapi import endpoints_to_openapi, openapi_to_endpoints
+    ep = Endpoint(
+        name="GET:/slots",
+        path="/slots",
+        method="GET",
+        default=ResponseSpec(status=200, body='{"results":[]}'),
+        list_key="results",
+        list_item='{"d":"{DATE}"}',
+        list_count=2,
+        list_date_start="2026/09/01",
+        list_date_increment_type="hour",
+        list_date_increment_unit=2,
+    )
+    doc = endpoints_to_openapi([ep], include_extensions=True)
+    x = doc["paths"]["/slots"]["get"]["x-rapi-list"]
+    assert x["date_start"] == "2026/09/01"
+    assert x["date_increment_type"] == "hour"
+    assert x["date_increment_unit"] == 2
+    items = openapi_to_endpoints(doc)
+    assert items[0]["list_date_start"] == "2026/09/01"
+    assert items[0]["list_date_increment_type"] == "hour"
+    assert items[0]["list_date_increment_unit"] == 2

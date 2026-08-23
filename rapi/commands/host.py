@@ -60,13 +60,20 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--list-key", default=None,
                    help="Envelope field path to fill with a generated list (e.g. results)")
     p.add_argument("--list-item", default=None,
-                   help="JSON template for one list element (supports {INDEX}, {INDEX:05})")
+                   help="JSON template for one list element ({INDEX}, {INDEX:05}, {DATE}, {DATE:%Y/%m/%d})")
     p.add_argument("--list-item-file", default=None,
                    help="Load list item template from file")
     p.add_argument("--list-count", type=int, default=None,
                    help="Number of list items to generate")
     p.add_argument("--list-start", type=int, default=1,
                    help="Start index for {INDEX} (default: 1)")
+    p.add_argument("--list-date-start", default=None,
+                   help="Start datetime for {DATE} (e.g. 2026/09/01 or 2026-09-01 10:00)")
+    p.add_argument("--list-date-increment-type", default=None,
+                   metavar="TYPE",
+                   help="Date step: month, day, hour, minute (alias: minite)")
+    p.add_argument("--list-date-increment-unit", type=int, default=1,
+                   help="Add this many TYPE units per list item (default: 1)")
     p.set_defaults(func=run)
 
 
@@ -158,6 +165,9 @@ def run(args: argparse.Namespace) -> None:
     list_key = getattr(args, "list_key", None)
     list_count = getattr(args, "list_count", None)
     list_start = getattr(args, "list_start", 1)
+    list_date_start = getattr(args, "list_date_start", None)
+    list_date_increment_type = getattr(args, "list_date_increment_type", None)
+    list_date_increment_unit = int(getattr(args, "list_date_increment_unit", 1) or 1)
     if list_key and list_item is None:
         raise SystemExit("--list-key requires --list-item or --list-item-file")
     if list_key and list_count is None:
@@ -178,6 +188,9 @@ def run(args: argparse.Namespace) -> None:
         list_item=list_item,
         list_count=list_count,
         list_start=list_start,
+        list_date_start=list_date_start,
+        list_date_increment_type=list_date_increment_type,
+        list_date_increment_unit=list_date_increment_unit,
     )
 
     store = DefinitionStore()

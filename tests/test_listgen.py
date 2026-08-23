@@ -96,13 +96,13 @@ def test_http_list_endpoint():
 
 
 def test_apply_index_in_nested_structures():
-    from rapi.core.listgen import _apply_index_in_obj
+    from rapi.core.listgen import _apply_in_obj
     obj = {
         "id": "{INDEX:02}",
         "tags": ["a-{INDEX}", {"n": "{INDEX}"}],
         "meta": 1,
     }
-    out = _apply_index_in_obj(obj, 4)
+    out = _apply_in_obj(obj, index=4, date=None)
     assert out["id"] == "04"
     assert out["tags"][0] == "a-4"
     assert out["tags"][1]["n"] == "4"
@@ -159,3 +159,96 @@ def test_set_by_path_single_segment():
     root = {}
     _set_by_path(root, "results", [1, 2])
     assert root["results"] == [1, 2]
+
+
+def test_date_increment_day_and_format():
+    from rapi.core.listgen import expand_list_in_body
+    body = expand_list_in_body(
+        '{"results":[]}',
+        list_key="results",
+        list_item='{"d":"{DATE:%Y/%m/%d}","id":"{INDEX:02}"}',
+        list_count=3,
+        list_start=1,
+        list_date_start="2026/09/01",
+        list_date_increment_type="day",
+        list_date_increment_unit=1,
+    )
+    import json
+    data = json.loads(body)
+    assert data["results"][0]["d"] == "2026/09/01"
+    assert data["results"][1]["d"] == "2026/09/02"
+    assert data["results"][2]["d"] == "2026/09/03"
+    assert data["results"][2]["id"] == "03"
+
+
+def test_date_increment_month_and_unit():
+    from rapi.core.listgen import expand_list_in_body
+    import json
+    body = expand_list_in_body(
+        '{"results":[]}',
+        list_key="results",
+        list_item='{"d":"{DATE:%Y-%m}"}',
+        list_count=3,
+        list_date_start="2026/01/31",
+        list_date_increment_type="month",
+        list_date_increment_unit=1,
+    )
+    data = json.loads(body)
+    # Jan 31 + 1 month -> Feb 28/29
+    assert data["results"][0]["d"] == "2026-01"
+    assert data["results"][1]["d"] == "2026-02"
+    assert data["results"][2]["d"] == "2026-03"
+
+
+def test_date_increment_hour_minute_alias():
+    from rapi.core.listgen import expand_list_in_body, normalize_increment_type
+    import json
+    assert normalize_increment_type("minite") == "minute"
+    body = expand_list_in_body(
+        '{"results":[]}',
+        list_key="results",
+        list_item='{"t":"{DATE:%Y/%m/%d %H:%M}"}',
+        list_count=2,
+        list_date_start="2026/09/01 10:00",
+        list_date_increment_type="minite",
+        list_date_increment_unit=15,
+    )
+    data = json.loads(body)
+    assert data["results"][0]["t"] == "2026/09/01 10:00"
+    assert data["results"][1]["t"] == "2026/09/01 10:15"
+
+
+def test_listgen_error_and_hour_and_default_date_fmt():
+    from datetime import datetime
+    from rapi.core.listgen import (
+        add_date_offset,
+        format_date,
+        normalize_increment_type,
+        parse_date_start,
+        expand_list_in_body,
+    )
+    import json
+    import pytest
+
+    with pytest.raises(ValueError):
+        parse_date_start("not-a-date")
+    assert normalize_increment_type(None) is None
+    assert normalize_increment_type("  ") is None
+    with pytest.raises(ValueError):
+        normalize_increment_type("year")
+    dt = datetime(2026, 9, 1, 10, 0)
+    assert add_date_offset(dt, inc_type="hour", unit=2, steps=1).hour == 12
+    with pytest.raises(ValueError):
+        add_date_offset(dt, inc_type="week", unit=1, steps=1)
+    assert format_date(dt, None) == "2026/09/01"
+
+    body = expand_list_in_body(
+        '{"results":[]}',
+        list_key="results",
+        list_item='{"d":"{DATE}"}',
+        list_count=1,
+        list_date_start="2026-09-01",
+        list_date_increment_type="day",
+        list_date_increment_unit=1,
+    )
+    assert json.loads(body)["results"][0]["d"] == "2026/09/01"

@@ -81,6 +81,9 @@ class Endpoint:
     list_item: str | None = None  # JSON template for one element
     list_count: int | None = None
     list_start: int = 1
+    list_date_start: str | None = None
+    list_date_increment_type: str | None = None  # month|day|hour|minute
+    list_date_increment_unit: int = 1
 
     def __post_init__(self) -> None:
         if not self.path.startswith("/"):
@@ -113,6 +116,12 @@ class Endpoint:
             d["list_count"] = self.list_count
         if self.list_start != 1:
             d["list_start"] = self.list_start
+        if self.list_date_start is not None:
+            d["list_date_start"] = self.list_date_start
+        if self.list_date_increment_type is not None:
+            d["list_date_increment_type"] = self.list_date_increment_type
+        if self.list_date_increment_unit != 1:
+            d["list_date_increment_unit"] = int(self.list_date_increment_unit)
         return d
 
     @classmethod
@@ -157,4 +166,7 @@ class Endpoint:
             list_item=data.get("list_item"),
             list_count=(int(data["list_count"]) if data.get("list_count") is not None else None),
             list_start=int(data.get("list_start", 1)),
+            list_date_start=data.get("list_date_start"),
+            list_date_increment_type=data.get("list_date_increment_type"),
+            list_date_increment_unit=int(data.get("list_date_increment_unit", 1) or 1),
         )

@@ -547,6 +547,23 @@ curl http://127.0.0.1:8000/items
 | `{INDEX:05}` | `00001` |
 | `{LIST_COUNT}` | envelope 内の件数埋め込み |
 
+
+### 日付のインクリメント（`{DATE}`）
+
+`{INDEX}` に加えて、開始日時から月・日・時・分を加算できます。
+
+```bash
+rapi host /slots get   -r '{"results":[]}'   --list-key results   --list-count 3   --list-item '{"id":"TEST_{INDEX:05}","name":"item-{INDEX:03}","day":"{DATE:%Y/%m/%d}"}'   --list-date-start '2026/09/01'   --list-date-increment-type day   --list-date-increment-unit 1
+```
+
+| オプション | 意味 |
+|-----------|------|
+| `--list-date-start` | 開始（例: `2026/09/01` / `2026-09-01 10:00`） |
+| `--list-date-increment-type` | `month` / `day` / `hour` / `minute`（`minite` も可） |
+| `--list-date-increment-unit` | 1件あたりの加算量（例: 15 分なら `15`） |
+
+プレースホルダー: `{DATE}`（既定 `%Y/%m/%d`）、`{DATE:%Y/%m/%d %H:%M}` など strftime 形式。
+
 ## QUERY（RFC 10008）
 
 ```bash

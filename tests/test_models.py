@@ -109,3 +109,26 @@ def test_endpoint_from_dict_flat_with_list():
     })
     assert ep.default.status == 200
     assert ep.list_key == "results"
+
+
+def test_endpoint_list_date_fields_roundtrip():
+    from rapi.core.models import Endpoint, ResponseSpec
+    ep = Endpoint(
+        name="GET:/d",
+        path="/d",
+        method="GET",
+        default=ResponseSpec(status=200, body="{}"),
+        list_key="results",
+        list_item="{}",
+        list_count=2,
+        list_date_start="2026/09/01",
+        list_date_increment_type="day",
+        list_date_increment_unit=15,
+    )
+    d = ep.to_dict()
+    assert d["list_date_start"] == "2026/09/01"
+    assert d["list_date_increment_type"] == "day"
+    assert d["list_date_increment_unit"] == 15
+    ep2 = Endpoint.from_dict(d)
+    assert ep2.list_date_start == "2026/09/01"
+    assert ep2.list_date_increment_unit == 15

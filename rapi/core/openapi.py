@@ -77,12 +77,19 @@ def endpoints_to_openapi(endpoints: list[Endpoint], *, title: str = "rapi mocks"
             if ep.strict_params:
                 op["x-rapi-strict-params"] = True
             if ep.list_key:
-                op["x-rapi-list"] = {
+                xlist = {
                     "key": ep.list_key,
                     "item": ep.list_item,
                     "count": ep.list_count,
                     "start": ep.list_start,
                 }
+                if getattr(ep, "list_date_start", None):
+                    xlist["date_start"] = ep.list_date_start
+                if getattr(ep, "list_date_increment_type", None):
+                    xlist["date_increment_type"] = ep.list_date_increment_type
+                if int(getattr(ep, "list_date_increment_unit", 1) or 1) != 1:
+                    xlist["date_increment_unit"] = int(ep.list_date_increment_unit)
+                op["x-rapi-list"] = xlist
             if ep.default.content_type:
                 op["x-rapi-content-type"] = ep.default.content_type
 
@@ -347,6 +354,12 @@ def openapi_to_endpoints(doc: dict[str, Any]) -> list[dict[str, Any]]:
                 ep["list_item"] = lst.get("item")
                 ep["list_count"] = lst.get("count")
                 ep["list_start"] = lst.get("start", 1)
+                if lst.get("date_start"):
+                    ep["list_date_start"] = lst.get("date_start")
+                if lst.get("date_increment_type"):
+                    ep["list_date_increment_type"] = lst.get("date_increment_type")
+                if lst.get("date_increment_unit") is not None:
+                    ep["list_date_increment_unit"] = int(lst.get("date_increment_unit") or 1)
             result.append(ep)
 
     return result

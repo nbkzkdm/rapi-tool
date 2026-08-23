@@ -387,6 +387,9 @@ class MockHandler(BaseHTTPRequestHandler):
                 list_item=ep.list_item,
                 list_count=ep.list_count,
                 list_start=ep.list_start,
+                list_date_start=getattr(ep, "list_date_start", None),
+                list_date_increment_type=getattr(ep, "list_date_increment_type", None),
+                list_date_increment_unit=int(getattr(ep, "list_date_increment_unit", 1) or 1),
             )
         body_out = apply_placeholders(body_src, ctx)
 
