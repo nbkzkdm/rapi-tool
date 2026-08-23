@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", action="version", version="rapi 0.2.0")
+    parser.add_argument("--version", action="version", version="rapi 0.2.1")
     sub = parser.add_subparsers(
         dest="command",
         required=True,
