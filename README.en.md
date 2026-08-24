@@ -6,6 +6,15 @@ Define endpoints, methods, and responses (with conditional rules and placeholder
 using `rapi host`, then listen with `rapi start`.
 Clients call it like a normal HTTP API (GET / POST / QUERY, etc.).
 
+Primary use is **local unit tests** (and light integration when needed).  
+It is not a drop-in replacement for Prism or WireMock — a separate lane: **thin, fast, CLI-first**.
+
+| Good fit | Not the main fit (prefer other tools) |
+|----------|----------------------------------------|
+| A few mocks when OpenAPI is missing or thin | Contract-accurate mocks / validation → **Prism** |
+| Conditional rules, placeholders, delays quickly | Record/playback, fault injection, rich matching → **WireMock** |
+| Minimal deps, start locally in seconds | Shared enterprise mock platform |
+
 [日本語](README.md)
 
 ## Features
